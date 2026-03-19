@@ -1,0 +1,13 @@
+packages:
+  "framer-motion": "Animations and page transitions for a premium feel"
+  "react-hook-form": "Form state management"
+  "@hookform/resolvers": "Zod resolver for react-hook-form"
+  "zod": "Schema validation for forms"
+  "date-fns": "Date formatting and manipulation"
+  "xlsx": "Excel backup functionality"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility to merge Tailwind classes"
+
+notes:
+  - API endpoints provided by workspace api-client-react package.
+  - Excel export functionality requires the xlsx package to run client-side.

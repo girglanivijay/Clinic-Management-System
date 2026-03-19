@@ -1,22 +1,24 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Manglam Clinic API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: patients
+    description: Patient operations
+  - name: complaint-codes
+    description: Complaint code operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +26,242 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /patients:
+    get:
+      operationId: listPatients
+      tags: [patients]
+      summary: List all patients
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+          description: Filter by date (YYYY-MM-DD)
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by name or mobile
+      responses:
+        "200":
+          description: List of patients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Patient"
+    post:
+      operationId: createPatient
+      tags: [patients]
+      summary: Create a new patient visit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePatient"
+      responses:
+        "201":
+          description: Patient created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Patient"
+
+  /patients/{id}:
+    get:
+      operationId: getPatient
+      tags: [patients]
+      summary: Get patient by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Patient found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Patient"
+        "404":
+          description: Not found
+    put:
+      operationId: updatePatient
+      tags: [patients]
+      summary: Update patient visit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePatient"
+      responses:
+        "200":
+          description: Patient updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Patient"
+    delete:
+      operationId: deletePatient
+      tags: [patients]
+      summary: Delete patient visit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResponse"
+
+  /patients/lookup/mobile/{mobile}:
+    get:
+      operationId: lookupPatientByMobile
+      tags: [patients]
+      summary: Lookup patient history by mobile
+      parameters:
+        - name: mobile
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Patient history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientLookup"
+
+  /patients/lookup/name/{name}:
+    get:
+      operationId: lookupPatientByName
+      tags: [patients]
+      summary: Lookup patient history by name
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Patient history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientLookup"
+
+  /patients/stats/daily:
+    get:
+      operationId: getDailyStats
+      tags: [patients]
+      summary: Get daily patient and fees stats
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+          description: Date (YYYY-MM-DD), defaults to today
+      responses:
+        "200":
+          description: Daily stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyStats"
+
+  /complaint-codes:
+    get:
+      operationId: listComplaintCodes
+      tags: [complaint-codes]
+      summary: List all complaint codes
+      responses:
+        "200":
+          description: List of complaint codes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ComplaintCode"
+    post:
+      operationId: createComplaintCode
+      tags: [complaint-codes]
+      summary: Create a complaint code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateComplaintCode"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComplaintCode"
+
+  /complaint-codes/{id}:
+    put:
+      operationId: updateComplaintCode
+      tags: [complaint-codes]
+      summary: Update complaint code
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateComplaintCode"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComplaintCode"
+    delete:
+      operationId: deleteComplaintCode
+      tags: [complaint-codes]
+      summary: Delete complaint code
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +272,166 @@ components:
       required:
         - status
 
+    Patient:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        age:
+          type: integer
+        address:
+          type: string
+        mobile:
+          type: string
+        complaintCode:
+          type: string
+        complaint:
+          type: string
+        treatment:
+          type: string
+        advice:
+          type: string
+        reports:
+          type: string
+        fees:
+          type: number
+        visitDate:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - age
+        - address
+        - mobile
+        - fees
+        - visitDate
+        - createdAt
+
+    CreatePatient:
+      type: object
+      properties:
+        name:
+          type: string
+        age:
+          type: integer
+        address:
+          type: string
+        mobile:
+          type: string
+        complaintCode:
+          type: string
+        complaint:
+          type: string
+        treatment:
+          type: string
+        advice:
+          type: string
+        reports:
+          type: string
+        fees:
+          type: number
+        visitDate:
+          type: string
+      required:
+        - name
+        - age
+        - address
+        - mobile
+        - fees
+
+    PatientLookup:
+      type: object
+      properties:
+        latestInfo:
+          $ref: "#/components/schemas/PatientInfo"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/Patient"
+      required:
+        - history
+
+    PatientInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        age:
+          type: integer
+        address:
+          type: string
+        mobile:
+          type: string
+      required:
+        - name
+        - age
+        - address
+        - mobile
+
+    DailyStats:
+      type: object
+      properties:
+        date:
+          type: string
+        totalPatients:
+          type: integer
+        totalFees:
+          type: number
+        patients:
+          type: array
+          items:
+            $ref: "#/components/schemas/Patient"
+      required:
+        - date
+        - totalPatients
+        - totalFees
+        - patients
+
+    ComplaintCode:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        complaint:
+          type: string
+        treatment:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - code
+        - complaint
+        - treatment
+        - createdAt
+
+    CreateComplaintCode:
+      type: object
+      properties:
+        code:
+          type: string
+        complaint:
+          type: string
+        treatment:
+          type: string
+      required:
+        - code
+        - complaint
+        - treatment
+
+    DeleteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required:
+        - success
+        - message
