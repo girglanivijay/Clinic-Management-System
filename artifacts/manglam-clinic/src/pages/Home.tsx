@@ -293,6 +293,18 @@ export default function Home() {
                               <p className="text-sm text-slate-600">{visit.treatment}</p>
                             </div>
                           )}
+                          {visit.advice && (
+                            <div>
+                              <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Advice</p>
+                              <p className="text-sm text-slate-600">{visit.advice}</p>
+                            </div>
+                          )}
+                          {visit.reports && (
+                            <div>
+                              <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Reports Required</p>
+                              <p className="text-sm text-slate-600">{visit.reports}</p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
