@@ -1,16 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Layout } from "@/components/Layout";
-import { 
-  useCreatePatient, 
-  useListComplaintCodes,
-  getLookupPatientByMobileQueryOptions,
-  getLookupPatientByNameQueryOptions
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Search, User, Phone, MapPin, Activity, Save, RefreshCw, FileText } from "lucide-react";
+import {
+  addPatient,
+  lookupByMobile,
+  lookupByName,
+  getComplaintCodes,
+  findComplaintCode,
+  type Patient,
+} from "@/lib/store";
+import { Loader2, User, Phone, MapPin, Activity, Save, RefreshCw, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
@@ -19,7 +20,7 @@ const patientSchema = z.object({
   name: z.string().min(1, "Name is required"),
   age: z.coerce.number().min(0, "Invalid age"),
   address: z.string().min(1, "Address is required"),
-  mobile: z.string().min(10, "Valid mobile required"),
+  mobile: z.string().min(5, "Valid mobile required"),
   complaintCode: z.string().optional(),
   complaint: z.string().optional(),
   treatment: z.string().optional(),
@@ -32,99 +33,74 @@ type PatientFormValues = z.infer<typeof patientSchema>;
 
 export default function Home() {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const [isLookingUp, setIsLookingUp] = useState(false);
-  const [patientHistory, setPatientHistory] = useState<any[]>([]);
-
-  const { data: complaintCodes } = useListComplaintCodes();
-  const createPatient = useCreatePatient();
+  const [patientHistory, setPatientHistory] = useState<Patient[]>([]);
 
   const form = useForm<PatientFormValues>({
     resolver: zodResolver(patientSchema),
     defaultValues: {
       name: "", age: 0, address: "", mobile: "", complaintCode: "",
-      complaint: "", treatment: "", advice: "", reports: "", fees: 0
-    }
+      complaint: "", treatment: "", advice: "", reports: "", fees: 0,
+    },
   });
 
-  // Watch for Complaint Code changes to auto-fill
   const complaintCodeValue = form.watch("complaintCode");
-  
+
   useEffect(() => {
-    if (complaintCodeValue && complaintCodes) {
-      const codeRecord = complaintCodes.find(
-        c => c.code.toLowerCase() === complaintCodeValue.toLowerCase()
-      );
+    if (complaintCodeValue && complaintCodeValue.length >= 2) {
+      const codeRecord = findComplaintCode(complaintCodeValue);
       if (codeRecord) {
         form.setValue("complaint", codeRecord.complaint);
         form.setValue("treatment", codeRecord.treatment);
       }
     }
-  }, [complaintCodeValue, complaintCodes, form]);
+  }, [complaintCodeValue, form]);
 
-  const handleMobileLookup = async () => {
+  const handleMobileLookup = useCallback(() => {
     const mobile = form.getValues("mobile");
-    if (!mobile || mobile.length < 10) return;
-    
+    if (!mobile || mobile.length < 5) return;
     setIsLookingUp(true);
-    try {
-      const result = await queryClient.fetchQuery(getLookupPatientByMobileQueryOptions(mobile));
-      if (result && result.latestInfo) {
-        form.setValue("name", result.latestInfo.name);
-        form.setValue("age", result.latestInfo.age);
-        form.setValue("address", result.latestInfo.address);
-        toast({ title: "Patient found", description: "Details auto-filled from history." });
-      }
-      setPatientHistory(result?.history || []);
-    } catch (e) {
-      // Not found, ignore
-      setPatientHistory([]);
-    } finally {
-      setIsLookingUp(false);
+    const result = lookupByMobile(mobile);
+    if (result.latestInfo) {
+      form.setValue("name", result.latestInfo.name);
+      form.setValue("age", result.latestInfo.age);
+      form.setValue("address", result.latestInfo.address);
+      toast({ title: "Patient found", description: "Details auto-filled from history." });
     }
-  };
+    setPatientHistory(result.history);
+    setIsLookingUp(false);
+  }, [form, toast]);
 
-  const handleNameLookup = async () => {
+  const handleNameLookup = useCallback(() => {
     const name = form.getValues("name");
     if (!name || name.length < 3) return;
-    
     setIsLookingUp(true);
-    try {
-      const result = await queryClient.fetchQuery(getLookupPatientByNameQueryOptions(name));
-      if (result && result.latestInfo) {
-        form.setValue("age", result.latestInfo.age);
-        form.setValue("address", result.latestInfo.address);
-        form.setValue("mobile", result.latestInfo.mobile);
-        toast({ title: "Patient found", description: "Details auto-filled from history." });
-      }
-      setPatientHistory(result?.history || []);
-    } catch (e) {
-      setPatientHistory([]);
-    } finally {
-      setIsLookingUp(false);
+    const result = lookupByName(name);
+    if (result.latestInfo) {
+      form.setValue("age", result.latestInfo.age);
+      form.setValue("address", result.latestInfo.address);
+      form.setValue("mobile", result.latestInfo.mobile);
+      toast({ title: "Patient found", description: "Details auto-filled from history." });
     }
-  };
+    setPatientHistory(result.history);
+    setIsLookingUp(false);
+  }, [form, toast]);
 
   const onSubmit = (data: PatientFormValues) => {
-    createPatient.mutate({ data }, {
-      onSuccess: () => {
-        toast({ title: "Success", description: "Patient registered successfully." });
-        form.reset({
-          name: "", age: 0, address: "", mobile: "", complaintCode: "",
-          complaint: "", treatment: "", advice: "", reports: "", fees: 0
-        });
-        setPatientHistory([]);
-      },
-      onError: (err) => {
-        toast({ variant: "destructive", title: "Error", description: "Failed to register patient." });
-      }
+    addPatient({
+      ...data,
+      fees: Number(data.fees),
+      visitDate: new Date().toISOString().split("T")[0],
     });
+    toast({ title: "Success", description: "Patient registered successfully." });
+    form.reset({ name: "", age: 0, address: "", mobile: "", complaintCode: "", complaint: "", treatment: "", advice: "", reports: "", fees: 0 });
+    setPatientHistory([]);
   };
 
   return (
     <Layout>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
+
         {/* Main Form */}
         <div className="lg:col-span-8 space-y-6">
           <div className="medical-card p-6 md:p-8">
@@ -139,8 +115,8 @@ export default function Home() {
             </div>
 
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              
-              {/* Demographics Group */}
+
+              {/* Demographics */}
               <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
@@ -162,14 +138,12 @@ export default function Home() {
                   <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                     <User className="w-4 h-4 text-slate-400" /> Patient Name
                   </label>
-                  <div className="relative">
-                    <input
-                      {...form.register("name")}
-                      onBlur={handleNameLookup}
-                      className="w-full pl-4 pr-10 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
-                      placeholder="Full Name"
-                    />
-                  </div>
+                  <input
+                    {...form.register("name")}
+                    onBlur={handleNameLookup}
+                    className="w-full pl-4 pr-10 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
+                    placeholder="Full Name"
+                  />
                   {form.formState.errors.name && <p className="text-destructive text-xs">{form.formState.errors.name.message}</p>}
                 </div>
 
@@ -197,7 +171,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Medical Details Group */}
+              {/* Medical Details */}
               <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
@@ -268,10 +242,9 @@ export default function Home() {
               <div className="flex justify-end pt-4">
                 <button
                   type="submit"
-                  disabled={createPatient.isPending}
-                  className="px-8 py-3 rounded-xl font-semibold bg-gradient-to-r from-primary to-primary/90 text-white shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2"
+                  className="px-8 py-3 rounded-xl font-semibold bg-gradient-to-r from-primary to-primary/90 text-white shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex items-center gap-2"
                 >
-                  {createPatient.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                  <Save className="w-5 h-5" />
                   Save Patient Record
                 </button>
               </div>
@@ -296,7 +269,6 @@ export default function Home() {
                     </div>
                     <h3 className="text-lg font-bold text-slate-900 font-display">Visit History</h3>
                   </div>
-
                   <div className="flex-1 overflow-y-auto pr-2 space-y-4">
                     {patientHistory.map((visit, i) => (
                       <div key={i} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
@@ -327,7 +299,7 @@ export default function Home() {
                   </div>
                 </motion.div>
               ) : (
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="medical-card p-8 flex flex-col items-center justify-center text-center text-slate-400 h-64 border-dashed"

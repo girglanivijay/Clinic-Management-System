@@ -4,6 +4,16 @@
 
 pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
 
+## Manglam Clinic — Offline Web App
+
+Patient management software for Dr. Vijay Girglani. Three screens: Patient Registration (auto-fill from mobile/name history), Daily Register (per-date stats + Excel export), Complaint Codes manager. All data stored in browser localStorage — no server required. PWA-enabled: installable, works offline, service worker caches all assets.
+
+### Frontend-only architecture
+- All data in `localStorage` via `src/lib/store.ts`
+- Service worker at `public/sw.js` — cache-first strategy
+- PWA manifest at `public/manifest.json`
+- Pages: `Home.tsx`, `DailyRegister.tsx`, `ComplaintCodes.tsx` — all use store.ts directly, no API calls
+
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces

@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import { Layout } from "@/components/Layout";
-import { 
-  useGetDailyStats, 
-  useUpdatePatient,
-  useDeletePatient
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Calendar, Download, Edit2, Trash2, Users, IndianRupee, FileText } from "lucide-react";
+import {
+  getDailyStats,
+  updatePatient,
+  deletePatient,
+  getAllDates,
+  type Patient,
+  type DailyStats,
+} from "@/lib/store";
+import { Calendar, Download, Edit2, Trash2, Users, IndianRupee, FileText, ChevronDown, ChevronUp } from "lucide-react";
 import { exportToExcel } from "@/lib/export";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -24,27 +26,38 @@ const editSchema = z.object({
   complaintCode: z.string().optional(),
   complaint: z.string().optional(),
   treatment: z.string().optional(),
+  advice: z.string().optional(),
+  reports: z.string().optional(),
   fees: z.coerce.number(),
 });
 
 export default function DailyRegister() {
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const { data: stats, isLoading } = useGetDailyStats({ date: selectedDate });
+  const [stats, setStats] = useState<DailyStats | null>(null);
+  const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
+  const [showSummary, setShowSummary] = useState(false);
+  const [allDates, setAllDates] = useState<{ date: string; count: number; totalFees: number }[]>([]);
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
-  const [editingPatient, setEditingPatient] = useState<any | null>(null);
-  
-  const updatePatient = useUpdatePatient();
-  const deletePatient = useDeletePatient();
+  const refresh = useCallback(() => {
+    setStats(getDailyStats(selectedDate));
+    setAllDates(getAllDates());
+  }, [selectedDate]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const editForm = useForm({
     resolver: zodResolver(editSchema),
-    values: editingPatient || {}
+    values: editingPatient || {},
   });
 
   const handleExport = () => {
-    if (!stats?.patients) return;
+    if (!stats?.patients || stats.patients.length === 0) {
+      toast({ variant: "destructive", title: "No Data", description: "No patients to export for this date." });
+      return;
+    }
     const exportData = stats.patients.map((p, index) => ({
       "S.No": index + 1,
       "Name": p.name,
@@ -55,8 +68,9 @@ export default function DailyRegister() {
       "Complaint": p.complaint || "-",
       "Treatment": p.treatment || "-",
       "Advice": p.advice || "-",
+      "Reports": p.reports || "-",
       "Fees": p.fees,
-      "Date": format(new Date(p.visitDate), "dd-MMM-yyyy")
+      "Date": format(new Date(p.visitDate), "dd-MMM-yyyy"),
     }));
     exportToExcel(exportData, `Manglam_Clinic_${selectedDate}`);
     toast({ title: "Export Successful", description: "Excel file downloaded." });
@@ -64,36 +78,29 @@ export default function DailyRegister() {
 
   const onEditSubmit = (data: any) => {
     if (!editingPatient) return;
-    updatePatient.mutate({ id: editingPatient.id, data }, {
-      onSuccess: () => {
-        toast({ title: "Updated", description: "Patient record updated." });
-        setEditingPatient(null);
-        queryClient.invalidateQueries({ queryKey: ["/api/patients/stats/daily"] });
-      }
-    });
+    updatePatient(editingPatient.id, { ...data, fees: Number(data.fees) });
+    toast({ title: "Updated", description: "Patient record updated." });
+    setEditingPatient(null);
+    refresh();
   };
 
   const handleDelete = (id: number) => {
     if (!confirm("Are you sure you want to delete this record?")) return;
-    deletePatient.mutate({ id }, {
-      onSuccess: () => {
-        toast({ title: "Deleted", description: "Patient record deleted." });
-        queryClient.invalidateQueries({ queryKey: ["/api/patients/stats/daily"] });
-      }
-    });
+    deletePatient(id);
+    toast({ title: "Deleted", description: "Patient record deleted." });
+    refresh();
   };
 
   return (
     <Layout>
       <div className="space-y-8">
-        
+
         {/* Header Controls */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-display text-slate-900">Daily Register</h2>
             <p className="text-slate-500 text-sm">View and manage today's patients</p>
           </div>
-          
           <div className="flex items-center gap-3">
             <div className="relative">
               <Calendar className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -122,26 +129,21 @@ export default function DailyRegister() {
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Total Patients</p>
-              <p className="text-3xl font-display font-bold text-slate-900">
-                {isLoading ? "-" : stats?.totalPatients || 0}
-              </p>
+              <p className="text-3xl font-display font-bold text-slate-900">{stats?.totalPatients || 0}</p>
             </div>
           </div>
-          
           <div className="medical-card p-6 flex items-center gap-4 bg-gradient-to-br from-white to-emerald-50/50">
             <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600">
               <IndianRupee className="w-7 h-7" />
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Total Collection</p>
-              <p className="text-3xl font-display font-bold text-slate-900">
-                {isLoading ? "-" : formatCurrency(stats?.totalFees || 0)}
-              </p>
+              <p className="text-3xl font-display font-bold text-slate-900">{formatCurrency(stats?.totalFees || 0)}</p>
             </div>
           </div>
         </div>
 
-        {/* Main Table */}
+        {/* Patient Table */}
         <div className="medical-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
@@ -156,13 +158,7 @@ export default function DailyRegister() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                      Loading...
-                    </td>
-                  </tr>
-                ) : stats?.patients && stats.patients.length > 0 ? (
+                {stats?.patients && stats.patients.length > 0 ? (
                   stats.patients.map((p, i) => (
                     <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 py-4 font-medium text-slate-400">{i + 1}</td>
@@ -174,12 +170,8 @@ export default function DailyRegister() {
                         {p.complaintCode && <span className="font-bold text-primary mr-1">[{p.complaintCode}]</span>}
                         {p.complaint || "-"}
                       </td>
-                      <td className="px-6 py-4 max-w-[200px] truncate text-slate-600">
-                        {p.treatment || "-"}
-                      </td>
-                      <td className="px-6 py-4 text-right font-bold text-slate-900">
-                        ₹{p.fees}
-                      </td>
+                      <td className="px-6 py-4 max-w-[200px] truncate text-slate-600">{p.treatment || "-"}</td>
+                      <td className="px-6 py-4 text-right font-bold text-slate-900">₹{p.fees}</td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-center gap-2">
                           <button
@@ -213,6 +205,58 @@ export default function DailyRegister() {
           </div>
         </div>
 
+        {/* Day-wise Collection Summary */}
+        <div className="medical-card overflow-hidden">
+          <button
+            onClick={() => setShowSummary((v) => !v)}
+            className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-slate-50/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <IndianRupee className="w-5 h-5 text-emerald-600" />
+              <span className="font-semibold text-slate-800">Day-wise Collection Summary</span>
+              <span className="text-xs text-slate-500 ml-1">({allDates.length} days)</span>
+            </div>
+            {showSummary ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+          </button>
+          {showSummary && (
+            <div className="border-t border-slate-100">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-6 py-3 font-semibold text-slate-500">Date</th>
+                    <th className="px-6 py-3 font-semibold text-slate-500">Patients</th>
+                    <th className="px-6 py-3 font-semibold text-slate-500 text-right">Collection</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {allDates.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="px-6 py-6 text-center text-slate-400">No data yet</td>
+                    </tr>
+                  ) : (
+                    allDates.map((d) => (
+                      <tr
+                        key={d.date}
+                        onClick={() => setSelectedDate(d.date)}
+                        className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                      >
+                        <td className="px-6 py-3 font-medium text-slate-700">
+                          {format(new Date(d.date), "dd MMM yyyy")}
+                          {d.date === format(new Date(), "yyyy-MM-dd") && (
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded font-bold">Today</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-3 text-slate-600">{d.count} patients</td>
+                        <td className="px-6 py-3 text-right font-semibold text-emerald-700">{formatCurrency(d.totalFees)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* Edit Dialog */}
@@ -228,31 +272,44 @@ export default function DailyRegister() {
                 <input {...editForm.register("name")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
               </div>
               <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Age</label>
+                <input type="number" {...editForm.register("age")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
                 <label className="text-xs font-semibold text-slate-500 mb-1 block">Mobile</label>
                 <input {...editForm.register("mobile")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
               </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Address</label>
+                <input {...editForm.register("address")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
+              </div>
             </div>
-            
             <div>
               <label className="text-xs font-semibold text-slate-500 mb-1 block">Complaint Code</label>
               <input {...editForm.register("complaintCode")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none uppercase" />
             </div>
-
             <div>
               <label className="text-xs font-semibold text-slate-500 mb-1 block">Complaint</label>
               <input {...editForm.register("complaint")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
             </div>
-
             <div>
               <label className="text-xs font-semibold text-slate-500 mb-1 block">Treatment</label>
               <input {...editForm.register("treatment")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
             </div>
-            
             <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Fees</label>
+              <label className="text-xs font-semibold text-slate-500 mb-1 block">Advice</label>
+              <input {...editForm.register("advice")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-500 mb-1 block">Reports</label>
+              <input {...editForm.register("reports")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-500 mb-1 block">Fees (₹)</label>
               <input type="number" {...editForm.register("fees")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
             </div>
-
             <div className="flex justify-end gap-3 pt-4">
               <button type="button" onClick={() => setEditingPatient(null)} className="px-4 py-2 rounded-xl font-medium bg-slate-100 hover:bg-slate-200 text-slate-700">Cancel</button>
               <button type="submit" className="px-4 py-2 rounded-xl font-medium bg-primary text-white shadow-md shadow-primary/20 hover:bg-primary/90">Save Changes</button>
@@ -260,7 +317,6 @@ export default function DailyRegister() {
           </form>
         </DialogContent>
       </Dialog>
-
     </Layout>
   );
 }
