@@ -5,6 +5,7 @@ export interface Patient {
   name: string;
   age: number;
   ageMonths?: number;
+  weight?: string;
   address: string;
   mobile: string;
   complaintCode?: string;
@@ -13,7 +14,7 @@ export interface Patient {
   advice?: string;
   reports?: string;
   fees: number;
-  paymentMode?: "cash" | "upi";
+  paymentMode?: "cash" | "upi"; // kept for backward compat, no longer used in UI
   attachments?: string[]; // base64 data URLs
   registerType?: "general" | "ayurvedic";
   visitDate: string;
@@ -80,14 +81,14 @@ export function deletePatient(id: number): boolean {
   return filtered.length !== patients.length;
 }
 
-// General register: records without registerType OR explicitly 'general'
+// Daily register shows ALL patients (general + ayurvedic) for the date
 export function getPatientsByDate(date: string): Patient[] {
   return getPatients()
-    .filter((p) => p.visitDate === date && (p.registerType === "general" || !p.registerType))
+    .filter((p) => p.visitDate === date)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-// Ayurvedic register
+// Ayurvedic register only shows ayurvedic patients
 export function getAyurvedicPatientsByDate(date: string): Patient[] {
   return getPatients()
     .filter((p) => p.visitDate === date && p.registerType === "ayurvedic")
@@ -119,6 +120,7 @@ export interface DailyStats {
   patients: Patient[];
 }
 
+// Daily stats counts ALL patients
 export function getDailyStats(date: string): DailyStats {
   const patients = getPatientsByDate(date);
   const totalFees = patients.reduce((sum, p) => sum + (p.fees || 0), 0);
@@ -131,8 +133,9 @@ export function getAyurvedicDailyStats(date: string): DailyStats {
   return { date, totalPatients: patients.length, totalFees, patients };
 }
 
+// All dates counts ALL patients
 export function getAllDates(): { date: string; count: number; totalFees: number }[] {
-  const patients = getPatients().filter((p) => p.registerType === "general" || !p.registerType);
+  const patients = getPatients();
   const map: Record<string, { count: number; totalFees: number }> = {};
   for (const p of patients) {
     if (!map[p.visitDate]) map[p.visitDate] = { count: 0, totalFees: 0 };

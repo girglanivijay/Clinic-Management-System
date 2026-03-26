@@ -15,22 +15,16 @@ export function PrintPrescription({ patient }: Props) {
         <p className="text-sm mt-1">Date: {format(new Date(patient.visitDate), "dd/MM/yyyy")}</p>
       </div>
 
-      {/* Patient Info */}
+      {/* Patient Info — no complaint code, no fees, no attachments */}
       <div className="grid grid-cols-2 gap-2 mb-6 text-sm">
         <div><span className="font-semibold">Name:</span> {patient.name}</div>
         <div>
           <span className="font-semibold">Age:</span>{" "}
-          {patient.age} yrs{patient.ageMonths ? ` ${patient.ageMonths} mo` : ""}
+          {patient.age ? `${patient.age} yrs` : ""}{patient.ageMonths ? ` ${patient.ageMonths} mo` : ""}
         </div>
         <div><span className="font-semibold">Mobile:</span> {patient.mobile}</div>
-        <div><span className="font-semibold">Address:</span> {patient.address}</div>
-        {patient.complaintCode && (
-          <div><span className="font-semibold">Code:</span> {patient.complaintCode}</div>
-        )}
-        <div>
-          <span className="font-semibold">Fees:</span> ₹{patient.fees}
-          {patient.paymentMode && ` (${patient.paymentMode.toUpperCase()})`}
-        </div>
+        {patient.address && <div><span className="font-semibold">Address:</span> {patient.address}</div>}
+        {patient.weight && <div><span className="font-semibold">Weight:</span> {patient.weight}</div>}
       </div>
 
       {/* Medical Details */}

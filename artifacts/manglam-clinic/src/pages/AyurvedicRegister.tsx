@@ -21,17 +21,17 @@ import * as z from "zod";
 
 const editSchema = z.object({
   name: z.string().min(1),
-  age: z.coerce.number(),
+  age: z.coerce.number().optional(),
   ageMonths: z.coerce.number().optional(),
-  address: z.string(),
+  weight: z.string().optional(),
+  address: z.string().optional(),
   mobile: z.string(),
   complaintCode: z.string().optional(),
   complaint: z.string().optional(),
   treatment: z.string().optional(),
   advice: z.string().optional(),
   reports: z.string().optional(),
-  fees: z.coerce.number(),
-  paymentMode: z.enum(["cash", "upi"]).optional(),
+  fees: z.coerce.number().optional(),
 });
 
 export default function AyurvedicRegister() {
@@ -51,7 +51,6 @@ export default function AyurvedicRegister() {
   useEffect(() => { refresh(); }, [refresh]);
 
   const editForm = useForm({ resolver: zodResolver(editSchema), values: editingPatient || {} });
-  const paymentMode = editForm.watch("paymentMode");
 
   const handleExport = () => {
     if (!stats?.patients || stats.patients.length === 0) {
@@ -61,16 +60,16 @@ export default function AyurvedicRegister() {
     const exportData = stats.patients.map((p, index) => ({
       "S.No": index + 1,
       "Name": p.name,
-      "Age": `${p.age} yrs${p.ageMonths ? ` ${p.ageMonths} mo` : ""}`,
-      "Address": p.address,
+      "Age": `${p.age || 0} yrs${p.ageMonths ? ` ${p.ageMonths} mo` : ""}`,
+      "Weight": p.weight || "-",
+      "Address": p.address || "-",
       "Mobile": p.mobile,
       "Complaint Code": p.complaintCode || "-",
       "Complaint": p.complaint || "-",
       "Treatment": p.treatment || "-",
       "Advice": p.advice || "-",
       "Reports": p.reports || "-",
-      "Fees": p.fees,
-      "Payment": p.paymentMode?.toUpperCase() || "-",
+      "Fees": p.fees || 0,
       "Date": format(new Date(p.visitDate), "dd-MMM-yyyy"),
     }));
     exportToExcel(exportData, `Manglam_Ayurvedic_${selectedDate}`);
@@ -79,7 +78,7 @@ export default function AyurvedicRegister() {
 
   const onEditSubmit = (data: any) => {
     if (!editingPatient) return;
-    updatePatient(editingPatient.id, { ...data, fees: Number(data.fees) });
+    updatePatient(editingPatient.id, { ...data, fees: Number(data.fees || 0) });
     toast({ title: "Updated", description: "Patient record updated." });
     setEditingPatient(null);
     refresh();
@@ -156,40 +155,34 @@ export default function AyurvedicRegister() {
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-emerald-50 border-b border-emerald-100">
                 <tr>
-                  <th className="px-6 py-4 font-semibold text-slate-600">#</th>
-                  <th className="px-6 py-4 font-semibold text-slate-600">Patient Details</th>
-                  <th className="px-6 py-4 font-semibold text-slate-600">Complaint</th>
-                  <th className="px-6 py-4 font-semibold text-slate-600">Treatment</th>
-                  <th className="px-6 py-4 font-semibold text-slate-600">Payment</th>
-                  <th className="px-6 py-4 font-semibold text-slate-600 text-right">Fees</th>
-                  <th className="px-6 py-4 font-semibold text-slate-600 text-center">Actions</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600">#</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600">Patient Details</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600">Weight</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600">Complaint</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600">Treatment</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600 text-right">Fees</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {stats?.patients && stats.patients.length > 0 ? (
                   stats.patients.map((p, i) => (
                     <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-6 py-4 font-medium text-slate-400">{i + 1}</td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-4 font-medium text-slate-400">{i + 1}</td>
+                      <td className="px-4 py-4">
                         <p className="font-bold text-slate-900">{p.name}</p>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          {p.age} yrs{p.ageMonths ? ` ${p.ageMonths} mo` : ""} • {p.mobile}
+                          {p.age ? `${p.age} yrs${p.ageMonths ? ` ${p.ageMonths} mo` : ""}` : ""}{p.age && p.mobile ? " • " : ""}{p.mobile}
                         </p>
                       </td>
-                      <td className="px-6 py-4 max-w-[180px] truncate text-slate-600">
+                      <td className="px-4 py-4 text-slate-600">{p.weight || "-"}</td>
+                      <td className="px-4 py-4 max-w-[160px] truncate text-slate-600">
                         {p.complaintCode && <span className="font-bold text-emerald-700 mr-1">[{p.complaintCode}]</span>}
                         {p.complaint || "-"}
                       </td>
-                      <td className="px-6 py-4 max-w-[180px] truncate text-slate-600">{p.treatment || "-"}</td>
-                      <td className="px-6 py-4">
-                        {p.paymentMode ? (
-                          <span className={`text-xs font-bold px-2 py-1 rounded-md ${p.paymentMode === "upi" ? "bg-violet-100 text-violet-700" : "bg-emerald-100 text-emerald-700"}`}>
-                            {p.paymentMode.toUpperCase()}
-                          </span>
-                        ) : "-"}
-                      </td>
-                      <td className="px-6 py-4 text-right font-bold text-slate-900">₹{p.fees}</td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-4 max-w-[160px] truncate text-slate-600">{p.treatment || "-"}</td>
+                      <td className="px-4 py-4 text-right font-bold text-slate-900">{p.fees ? `₹${p.fees}` : "-"}</td>
+                      <td className="px-4 py-4">
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => { setPrintPatient(p); setTimeout(() => printPatientPrescription(p), 50); }} className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors">
                             <Printer className="w-4 h-4" />
@@ -289,13 +282,17 @@ export default function AyurvedicRegister() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Weight</label>
+                <input {...editForm.register("weight")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" placeholder="e.g. 65 kg" />
+              </div>
+              <div>
                 <label className="text-xs font-semibold text-slate-500 mb-1 block">Mobile</label>
                 <input {...editForm.register("mobile")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
               </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block">Address</label>
-                <input {...editForm.register("address")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
-              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-500 mb-1 block">Address</label>
+              <input {...editForm.register("address")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 mb-1 block">Complaint Code</label>
@@ -318,14 +315,8 @@ export default function AyurvedicRegister() {
               <input {...editForm.register("reports")} className="w-full px-3 py-2 rounded-xl border focus:border-primary outline-none" />
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Fees (₹) & Payment</label>
-              <div className="flex gap-2">
-                <input type="number" {...editForm.register("fees")} className="flex-1 px-3 py-2 rounded-xl border focus:border-primary outline-none" />
-                <div className="flex rounded-xl overflow-hidden border border-slate-200">
-                  <button type="button" onClick={() => editForm.setValue("paymentMode", "cash")} className={`px-3 py-2 text-sm font-semibold transition-colors ${paymentMode === "cash" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>Cash</button>
-                  <button type="button" onClick={() => editForm.setValue("paymentMode", "upi")} className={`px-3 py-2 text-sm font-semibold transition-colors ${paymentMode === "upi" ? "bg-violet-500 text-white" : "text-slate-500"}`}>UPI</button>
-                </div>
-              </div>
+              <label className="text-xs font-semibold text-slate-500 mb-1 block">Fees (₹)</label>
+              <input type="number" {...editForm.register("fees")} className="w-full px-3 py-2 rounded-xl border focus:border-primary outline-none" />
             </div>
             <div className="flex justify-end gap-3 pt-4">
               <button type="button" onClick={() => setEditingPatient(null)} className="px-4 py-2 rounded-xl font-medium bg-slate-100 hover:bg-slate-200 text-slate-700">Cancel</button>

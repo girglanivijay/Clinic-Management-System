@@ -13,7 +13,7 @@ import {
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
 import {
   Loader2, User, Phone, MapPin, Activity, Save, RefreshCw,
-  FileText, Printer, Paperclip, X, Leaf,
+  FileText, Printer, Paperclip, X, Leaf, Weight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -21,25 +21,25 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const patientSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  age: z.coerce.number().min(0, "Invalid age"),
-  ageMonths: z.coerce.number().min(0).max(11).optional(),
-  address: z.string().min(1, "Address is required"),
   mobile: z.string().min(5, "Valid mobile required"),
+  age: z.coerce.number().min(0).optional(),
+  ageMonths: z.coerce.number().min(0).max(11).optional(),
+  weight: z.string().optional(),
+  address: z.string().optional(),
   complaintCode: z.string().optional(),
   complaint: z.string().optional(),
   treatment: z.string().optional(),
   advice: z.string().optional(),
   reports: z.string().optional(),
-  fees: z.coerce.number().min(0, "Fees required"),
-  paymentMode: z.enum(["cash", "upi"]).default("cash"),
+  fees: z.coerce.number().min(0).optional(),
 });
 
 type PatientFormValues = z.infer<typeof patientSchema>;
 
 const emptyDefaults: PatientFormValues = {
-  name: "", age: 0, ageMonths: 0, address: "", mobile: "",
-  complaintCode: "", complaint: "", treatment: "",
-  advice: "", reports: "", fees: 0, paymentMode: "cash",
+  name: "", mobile: "", age: 0, ageMonths: 0, weight: "",
+  address: "", complaintCode: "", complaint: "", treatment: "",
+  advice: "", reports: "", fees: 0,
 };
 
 export default function Home() {
@@ -55,7 +55,6 @@ export default function Home() {
     defaultValues: emptyDefaults,
   });
 
-  const paymentMode = form.watch("paymentMode");
   const complaintCodeValue = form.watch("complaintCode");
 
   useEffect(() => {
@@ -75,9 +74,10 @@ export default function Home() {
     const result = lookupByMobile(mobile);
     if (result.latestInfo) {
       form.setValue("name", result.latestInfo.name);
-      form.setValue("age", result.latestInfo.age);
+      form.setValue("age", result.latestInfo.age || 0);
       form.setValue("ageMonths", result.latestInfo.ageMonths || 0);
-      form.setValue("address", result.latestInfo.address);
+      form.setValue("weight", result.latestInfo.weight || "");
+      form.setValue("address", result.latestInfo.address || "");
       toast({ title: "Patient found", description: "Details auto-filled from history." });
     }
     setPatientHistory(result.history);
@@ -90,9 +90,10 @@ export default function Home() {
     setIsLookingUp(true);
     const result = lookupByName(name);
     if (result.latestInfo) {
-      form.setValue("age", result.latestInfo.age);
+      form.setValue("age", result.latestInfo.age || 0);
       form.setValue("ageMonths", result.latestInfo.ageMonths || 0);
-      form.setValue("address", result.latestInfo.address);
+      form.setValue("weight", result.latestInfo.weight || "");
+      form.setValue("address", result.latestInfo.address || "");
       form.setValue("mobile", result.latestInfo.mobile);
       toast({ title: "Patient found", description: "Details auto-filled from history." });
     }
@@ -120,9 +121,18 @@ export default function Home() {
 
   const savePatient = (data: PatientFormValues, registerType: "general" | "ayurvedic") => {
     const saved = addPatient({
-      ...data,
+      name: data.name,
+      mobile: data.mobile,
+      age: data.age || 0,
       ageMonths: data.ageMonths || 0,
-      fees: Number(data.fees),
+      weight: data.weight || "",
+      address: data.address || "",
+      complaintCode: data.complaintCode || "",
+      complaint: data.complaint || "",
+      treatment: data.treatment || "",
+      advice: data.advice || "",
+      reports: data.reports || "",
+      fees: Number(data.fees || 0),
       attachments,
       registerType,
       visitDate: new Date().toISOString().split("T")[0],
@@ -130,7 +140,9 @@ export default function Home() {
     setLastSaved(saved);
     toast({
       title: "Saved!",
-      description: `Patient saved to ${registerType === "ayurvedic" ? "Ayurvedic" : "General"} Register.`,
+      description: registerType === "ayurvedic"
+        ? "Patient saved to Ayurvedic Register (also visible in Daily Register)."
+        : "Patient saved to Daily Register.",
     });
     form.reset(emptyDefaults);
     setAttachments([]);
@@ -144,7 +156,6 @@ export default function Home() {
 
   return (
     <Layout>
-      {/* Hidden print component — only visible on print */}
       {lastSaved && <PrintPrescription patient={lastSaved} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -163,81 +174,98 @@ export default function Home() {
 
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               {/* Demographics */}
-              <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-slate-400" /> Mobile Number
-                  </label>
-                  <div className="relative">
+              <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Mobile — mandatory */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-slate-400" /> Mobile Number <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        {...form.register("mobile")}
+                        onBlur={handleMobileLookup}
+                        className="w-full pl-4 pr-10 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
+                        placeholder="e.g. 9876543210"
+                      />
+                      {isLookingUp && <Loader2 className="w-4 h-4 absolute right-3 top-3.5 animate-spin text-slate-400" />}
+                    </div>
+                    {form.formState.errors.mobile && <p className="text-destructive text-xs">{form.formState.errors.mobile.message}</p>}
+                  </div>
+
+                  {/* Name — mandatory */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      <User className="w-4 h-4 text-slate-400" /> Patient Name <span className="text-red-500">*</span>
+                    </label>
                     <input
-                      {...form.register("mobile")}
-                      onBlur={handleMobileLookup}
-                      className="w-full pl-4 pr-10 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
-                      placeholder="e.g. 9876543210"
+                      {...form.register("name")}
+                      onBlur={handleNameLookup}
+                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
+                      placeholder="Full Name"
                     />
-                    {isLookingUp && <Loader2 className="w-4 h-4 absolute right-3 top-3.5 animate-spin text-slate-400" />}
+                    {form.formState.errors.name && <p className="text-destructive text-xs">{form.formState.errors.name.message}</p>}
                   </div>
-                  {form.formState.errors.mobile && <p className="text-destructive text-xs">{form.formState.errors.mobile.message}</p>}
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                    <User className="w-4 h-4 text-slate-400" /> Patient Name
-                  </label>
-                  <input
-                    {...form.register("name")}
-                    onBlur={handleNameLookup}
-                    className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
-                    placeholder="Full Name"
-                  />
-                  {form.formState.errors.name && <p className="text-destructive text-xs">{form.formState.errors.name.message}</p>}
-                </div>
-
-                {/* Age — years + months */}
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-700">Age</label>
-                  <div className="flex gap-2">
-                    <div className="flex-1 relative">
-                      <input
-                        type="number"
-                        {...form.register("age")}
-                        className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
-                        placeholder="Years"
-                        min={0}
-                      />
-                      <span className="absolute right-3 top-3.5 text-xs text-slate-400">yrs</span>
-                    </div>
-                    <div className="w-28 relative">
-                      <input
-                        type="number"
-                        {...form.register("ageMonths")}
-                        className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
-                        placeholder="0"
-                        min={0}
-                        max={11}
-                      />
-                      <span className="absolute right-3 top-3.5 text-xs text-slate-400">mo</span>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Age */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Age <span className="text-slate-400 text-xs">(optional)</span></label>
+                    <div className="flex gap-2">
+                      <div className="flex-1 relative">
+                        <input
+                          type="number"
+                          {...form.register("age")}
+                          className="w-full px-3 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
+                          placeholder="0"
+                          min={0}
+                        />
+                        <span className="absolute right-2 top-3.5 text-xs text-slate-400">yrs</span>
+                      </div>
+                      <div className="w-20 relative">
+                        <input
+                          type="number"
+                          {...form.register("ageMonths")}
+                          className="w-full px-2 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
+                          placeholder="0"
+                          min={0}
+                          max={11}
+                        />
+                        <span className="absolute right-2 top-3.5 text-xs text-slate-400">mo</span>
+                      </div>
                     </div>
                   </div>
-                  {form.formState.errors.age && <p className="text-destructive text-xs">{form.formState.errors.age.message}</p>}
-                </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-slate-400" /> Address
-                  </label>
-                  <input
-                    {...form.register("address")}
-                    className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
-                    placeholder="City / Area"
-                  />
-                  {form.formState.errors.address && <p className="text-destructive text-xs">{form.formState.errors.address.message}</p>}
+                  {/* Weight */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      <Weight className="w-4 h-4 text-slate-400" /> Weight <span className="text-slate-400 text-xs">(optional)</span>
+                    </label>
+                    <input
+                      {...form.register("weight")}
+                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
+                      placeholder="e.g. 65 kg"
+                    />
+                  </div>
+
+                  {/* Address */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-slate-400" /> Address <span className="text-slate-400 text-xs">(optional)</span>
+                    </label>
+                    <input
+                      {...form.register("address")}
+                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
+                      placeholder="City / Area"
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* Medical Details */}
-              <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                       <Activity className="w-4 h-4 text-slate-400" /> Complaint Code
@@ -249,34 +277,15 @@ export default function Home() {
                     />
                   </div>
 
-                  {/* Fees + Payment Mode */}
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Consultation Fees (₹)</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        {...form.register("fees")}
-                        className="flex-1 px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all font-semibold text-slate-900"
-                        placeholder="Amount"
-                      />
-                      <div className="flex rounded-xl overflow-hidden border border-slate-200 bg-white">
-                        <button
-                          type="button"
-                          onClick={() => form.setValue("paymentMode", "cash")}
-                          className={`px-3 py-2 text-sm font-semibold transition-colors ${paymentMode === "cash" ? "bg-emerald-500 text-white" : "text-slate-500 hover:bg-slate-50"}`}
-                        >
-                          Cash
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => form.setValue("paymentMode", "upi")}
-                          className={`px-3 py-2 text-sm font-semibold transition-colors ${paymentMode === "upi" ? "bg-violet-500 text-white" : "text-slate-500 hover:bg-slate-50"}`}
-                        >
-                          UPI
-                        </button>
-                      </div>
-                    </div>
-                    {form.formState.errors.fees && <p className="text-destructive text-xs">{form.formState.errors.fees.message}</p>}
+                    <input
+                      type="number"
+                      {...form.register("fees")}
+                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all font-semibold text-slate-900"
+                      placeholder="Amount"
+                      min={0}
+                    />
                   </div>
                 </div>
 
@@ -300,7 +309,7 @@ export default function Home() {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Advice / Notes</label>
                     <textarea
@@ -361,12 +370,12 @@ export default function Home() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-wrap justify-end gap-3 pt-4">
+              <div className="flex flex-wrap justify-end gap-3 pt-2">
                 {lastSaved && (
                   <button
                     type="button"
                     onClick={() => printPatientPrescription(lastSaved)}
-                    className="px-6 py-3 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2"
+                    className="px-5 py-3 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2"
                   >
                     <Printer className="w-5 h-5" />
                     Print Last Prescription
@@ -375,14 +384,14 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={onSaveAyurvedic}
-                  className="px-6 py-3 rounded-xl font-semibold bg-emerald-600 text-white shadow-lg shadow-emerald-600/25 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-2"
+                  className="px-5 py-3 rounded-xl font-semibold bg-emerald-600 text-white shadow-lg shadow-emerald-600/25 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-2"
                 >
                   <Leaf className="w-5 h-5" />
                   Save to Ayurvedic
                 </button>
                 <button
                   type="submit"
-                  className="px-8 py-3 rounded-xl font-semibold bg-gradient-to-r from-primary to-primary/90 text-white shadow-lg shadow-primary/30 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-2"
+                  className="px-7 py-3 rounded-xl font-semibold bg-gradient-to-r from-primary to-primary/90 text-white shadow-lg shadow-primary/30 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-2"
                 >
                   <Save className="w-5 h-5" />
                   Save to General
@@ -421,19 +430,20 @@ export default function Home() {
                               <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded">AYU</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-1">
+                          {visit.fees > 0 && (
                             <span className="text-xs font-bold text-primary bg-primary/5 px-2 py-1 rounded-md">
                               ₹{visit.fees}
                             </span>
-                            {visit.paymentMode && (
-                              <span className={`text-[10px] font-bold px-1.5 py-1 rounded-md ${visit.paymentMode === "upi" ? "bg-violet-100 text-violet-700" : "bg-emerald-100 text-emerald-700"}`}>
-                                {visit.paymentMode.toUpperCase()}
-                              </span>
-                            )}
-                          </div>
+                          )}
                         </div>
 
                         <div className="space-y-2 mt-3">
+                          {visit.weight && (
+                            <div>
+                              <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Weight</p>
+                              <p className="text-sm text-slate-600">{visit.weight}</p>
+                            </div>
+                          )}
                           {visit.complaint && (
                             <div>
                               <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Complaint</p>
