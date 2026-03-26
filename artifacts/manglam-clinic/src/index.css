@@ -83,3 +83,12 @@
     @apply bg-slate-400;
   }
 }
+
+@media print {
+  body > * {
+    display: none !important;
+  }
+  #print-prescription {
+    display: block !important;
+  }
+}

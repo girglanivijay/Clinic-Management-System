@@ -1,12 +1,13 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Stethoscope, Users, FileText, Activity } from "lucide-react";
+import { Stethoscope, Users, FileText, Activity, Leaf } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
 const navItems = [
   { href: "/", label: "Patient Registration", icon: Users },
   { href: "/daily-register", label: "Daily Register", icon: Activity },
+  { href: "/ayurvedic-register", label: "Ayurvedic Register", icon: Leaf },
   { href: "/complaint-codes", label: "Complaint Codes", icon: FileText },
 ];
 
@@ -15,13 +16,12 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-background relative overflow-hidden">
-      {/* Decorative Background Elements */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-accent/5 rounded-full blur-3xl pointer-events-none" />
 
       {/* Header */}
-      <header className="sticky top-0 z-50 glass border-b border-border/50 px-4 md:px-8 py-4">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+      <header className="sticky top-0 z-50 glass border-b border-border/50 px-4 md:px-8 py-3 print:hidden">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20 text-white">
               <Stethoscope className="w-6 h-6" />
@@ -32,7 +32,7 @@ export function Layout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          <nav className="flex items-center gap-2 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200/50">
+          <nav className="flex flex-wrap items-center gap-1 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200/50">
             {navItems.map((item) => {
               const isActive = location === item.href;
               const Icon = item.icon;
@@ -41,19 +41,26 @@ export function Layout({ children }: { children: ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "relative px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors duration-200 z-10 hover:text-primary",
-                    isActive ? "text-primary" : "text-slate-600"
+                    "relative px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-colors duration-200 z-10 hover:text-primary",
+                    isActive ? "text-primary" : "text-slate-600",
+                    item.href === "/ayurvedic-register" && isActive ? "text-emerald-700" : "",
+                    item.href === "/ayurvedic-register" && !isActive ? "hover:text-emerald-700" : "",
                   )}
                 >
                   {isActive && (
                     <motion.div
                       layoutId="active-pill"
-                      className="absolute inset-0 bg-white rounded-lg shadow-sm border border-slate-200/50 -z-10"
+                      className={cn(
+                        "absolute inset-0 rounded-lg shadow-sm border -z-10",
+                        item.href === "/ayurvedic-register"
+                          ? "bg-emerald-50 border-emerald-200/50"
+                          : "bg-white border-slate-200/50"
+                      )}
                       transition={{ type: "spring", stiffness: 400, damping: 30 }}
                     />
                   )}
                   <Icon className="w-4 h-4" />
-                  <span className="hidden sm:inline">{item.label}</span>
+                  <span className="hidden md:inline">{item.label}</span>
                 </Link>
               );
             })}
@@ -62,7 +69,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-8 py-8 z-10">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-8 py-8 z-10 print:p-0 print:max-w-none">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}

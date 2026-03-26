@@ -4,6 +4,7 @@ export interface Patient {
   id: number;
   name: string;
   age: number;
+  ageMonths?: number;
   address: string;
   mobile: string;
   complaintCode?: string;
@@ -12,6 +13,9 @@ export interface Patient {
   advice?: string;
   reports?: string;
   fees: number;
+  paymentMode?: "cash" | "upi";
+  attachments?: string[]; // base64 data URLs
+  registerType?: "general" | "ayurvedic";
   visitDate: string;
   createdAt: string;
 }
@@ -76,9 +80,17 @@ export function deletePatient(id: number): boolean {
   return filtered.length !== patients.length;
 }
 
+// General register: records without registerType OR explicitly 'general'
 export function getPatientsByDate(date: string): Patient[] {
   return getPatients()
-    .filter((p) => p.visitDate === date)
+    .filter((p) => p.visitDate === date && (p.registerType === "general" || !p.registerType))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+// Ayurvedic register
+export function getAyurvedicPatientsByDate(date: string): Patient[] {
+  return getPatients()
+    .filter((p) => p.visitDate === date && p.registerType === "ayurvedic")
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
@@ -113,8 +125,27 @@ export function getDailyStats(date: string): DailyStats {
   return { date, totalPatients: patients.length, totalFees, patients };
 }
 
+export function getAyurvedicDailyStats(date: string): DailyStats {
+  const patients = getAyurvedicPatientsByDate(date);
+  const totalFees = patients.reduce((sum, p) => sum + (p.fees || 0), 0);
+  return { date, totalPatients: patients.length, totalFees, patients };
+}
+
 export function getAllDates(): { date: string; count: number; totalFees: number }[] {
-  const patients = getPatients();
+  const patients = getPatients().filter((p) => p.registerType === "general" || !p.registerType);
+  const map: Record<string, { count: number; totalFees: number }> = {};
+  for (const p of patients) {
+    if (!map[p.visitDate]) map[p.visitDate] = { count: 0, totalFees: 0 };
+    map[p.visitDate].count += 1;
+    map[p.visitDate].totalFees += p.fees || 0;
+  }
+  return Object.entries(map)
+    .map(([date, v]) => ({ date, ...v }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export function getAllAyurvedicDates(): { date: string; count: number; totalFees: number }[] {
+  const patients = getPatients().filter((p) => p.registerType === "ayurvedic");
   const map: Record<string, { count: number; totalFees: number }> = {};
   for (const p of patients) {
     if (!map[p.visitDate]) map[p.visitDate] = { count: 0, totalFees: 0 };
