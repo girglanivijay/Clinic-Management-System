@@ -14,10 +14,14 @@ import { PrintPrescription, printPatientPrescription } from "@/components/PrintP
 import {
   Loader2, User, Phone, MapPin, Activity, Save, RefreshCw,
   FileText, Printer, Paperclip, X, Leaf, Weight, Calendar, Hash,
+  Sheet, Settings2, RefreshCcw, CheckCircle2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+const SHEET_ID_KEY = "mc_gsheet_id";
 
 const patientSchema = z.object({
   patientNo: z.string().optional(),
@@ -43,6 +47,89 @@ const emptyDefaults: PatientFormValues = {
   advice: "", reports: "", fees: 0,
 };
 
+// ─── Google Sheet JSONP Fetch ─────────────────────────────────────────────────
+interface SheetRow {
+  name: string;
+  mobile: string;
+  age: string;
+  ageMonths: string;
+  weight: string;
+  address: string;
+}
+
+function normalizeHeader(h: string): string {
+  return h.toLowerCase().replace(/[\s().]/g, "");
+}
+
+function fetchSheetData(sheetId: string): Promise<SheetRow[]> {
+  return new Promise((resolve, reject) => {
+    const cbName = `_gviz_${Date.now()}`;
+    const script = document.createElement("script");
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Sync timed out. Make sure the Sheet ID is correct and the sheet is shared."));
+    }, 12000);
+
+    function cleanup() {
+      clearTimeout(timer);
+      delete (window as any)[cbName];
+      if (script.parentNode) script.remove();
+    }
+
+    (window as any)[cbName] = (response: any) => {
+      cleanup();
+      try {
+        const table = response?.table;
+        if (!table || !table.rows) { resolve([]); return; }
+
+        const cols: string[] = table.cols.map((c: any) =>
+          normalizeHeader(c.label || c.id || "")
+        );
+
+        const rows: SheetRow[] = table.rows
+          .map((row: any) => {
+            const obj: Record<string, string> = {};
+            (row.c || []).forEach((cell: any, i: number) => {
+              obj[cols[i]] = cell ? String(cell.v ?? "").trim() : "";
+            });
+            // Map known header variants → standard keys
+            const get = (...keys: string[]) => {
+              for (const k of keys) {
+                const normalized = normalizeHeader(k);
+                if (obj[normalized] !== undefined) return obj[normalized];
+              }
+              return "";
+            };
+            return {
+              name:      get("name", "patient name", "patientname"),
+              mobile:    get("mobile", "mobile number", "mobilenumber", "phone", "contact"),
+              age:       get("age", "ageyrs", "age(yrs)", "ageyears"),
+              ageMonths: get("agemo", "age(mo)", "agemonths", "months"),
+              weight:    get("weight"),
+              address:   get("address", "city", "area"),
+            } as SheetRow;
+          })
+          .filter((r: SheetRow) => r.name || r.mobile);
+
+        resolve(rows);
+      } catch (err) {
+        reject(new Error("Could not parse sheet data."));
+      }
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("Failed to reach Google Sheets. Check your Sheet ID."));
+    };
+
+    script.src = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq?tqx=out:json&callback=${cbName}`;
+    document.body.appendChild(script);
+  });
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function Home() {
   const { toast } = useToast();
   const [isLookingUp, setIsLookingUp] = useState(false);
@@ -51,6 +138,14 @@ export default function Home() {
   const [lastSaved, setLastSaved] = useState<Patient | null>(null);
   const [visitDate, setVisitDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Google Sheet state
+  const [sheetId, setSheetId] = useState(() => localStorage.getItem(SHEET_ID_KEY) || "");
+  const [sheetSettingsOpen, setSheetSettingsOpen] = useState(false);
+  const [sheetIdInput, setSheetIdInput] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncResults, setSyncResults] = useState<SheetRow[]>([]);
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
 
   const form = useForm<PatientFormValues>({
     resolver: zodResolver(patientSchema),
@@ -157,23 +252,227 @@ export default function Home() {
     form.handleSubmit((data) => savePatient(data, "ayurvedic"))();
   };
 
+  // ── Sheet Settings ─────────────────────────────────────────────────────────
+  const openSheetSettings = () => {
+    setSheetIdInput(sheetId);
+    setSheetSettingsOpen(true);
+  };
+
+  const saveSheetSettings = () => {
+    const trimmed = sheetIdInput.trim();
+    // Accept either full URL or just the ID
+    const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    const id = match ? match[1] : trimmed;
+    localStorage.setItem(SHEET_ID_KEY, id);
+    setSheetId(id);
+    setSheetSettingsOpen(false);
+    if (id) toast({ title: "Sheet Connected", description: "You can now sync patients from Google Sheets." });
+  };
+
+  // ── Sheet Sync ─────────────────────────────────────────────────────────────
+  const handleSync = async () => {
+    if (!sheetId) { openSheetSettings(); return; }
+    setSyncing(true);
+    try {
+      const rows = await fetchSheetData(sheetId);
+      setSyncResults(rows);
+      setSyncModalOpen(true);
+      if (rows.length === 0) {
+        toast({ title: "Sheet is empty", description: "No patient rows found in the sheet." });
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Sync Failed", description: err.message });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // ── Fill form from sheet row ───────────────────────────────────────────────
+  const fillFromRow = (row: SheetRow) => {
+    const ageNum = parseInt(row.age) || 0;
+    const ageMonthsNum = parseInt(row.ageMonths) || 0;
+    form.setValue("name", row.name);
+    form.setValue("mobile", row.mobile);
+    form.setValue("age", ageNum);
+    form.setValue("ageMonths", ageMonthsNum);
+    form.setValue("weight", row.weight);
+    form.setValue("address", row.address);
+
+    // Trigger history lookup if mobile is present
+    if (row.mobile && row.mobile.length >= 5) {
+      const result = lookupByMobile(row.mobile);
+      if (result.latestInfo) {
+        if (!row.age) form.setValue("age", result.latestInfo.age || 0);
+        if (!row.ageMonths) form.setValue("ageMonths", result.latestInfo.ageMonths || 0);
+        if (!row.weight) form.setValue("weight", result.latestInfo.weight || "");
+        if (!row.address) form.setValue("address", result.latestInfo.address || "");
+        toast({ title: "History loaded", description: "Past records found for this patient." });
+      }
+      setPatientHistory(result.history);
+    }
+    setSyncModalOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    toast({ title: "Form filled", description: `${row.name}'s details loaded. Add clinical notes and save.` });
+  };
+
   return (
     <Layout>
       {lastSaved && <PrintPrescription patient={lastSaved} />}
+
+      {/* Sheet Settings Dialog */}
+      <Dialog open={sheetSettingsOpen} onOpenChange={setSheetSettingsOpen}>
+        <DialogContent className="max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl flex items-center gap-2">
+              <Sheet className="w-5 h-5 text-emerald-600" /> Connect Google Sheet
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-800 space-y-2">
+              <p className="font-bold">One-time setup:</p>
+              <ol className="list-decimal list-inside space-y-1 text-xs">
+                <li>Open your Google Sheet where staff enters patients</li>
+                <li>Click <strong>Share</strong> → set to <strong>"Anyone with the link can View"</strong></li>
+                <li>Copy the link or just the Sheet ID from the URL</li>
+                <li>Paste it below</li>
+              </ol>
+              <p className="text-xs text-emerald-700 mt-1">
+                Sheet columns your staff should fill: <strong>Name, Mobile, Age, Weight, Address</strong>
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700">Google Sheet URL or ID</label>
+              <input
+                value={sheetIdInput}
+                onChange={(e) => setSheetIdInput(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 outline-none text-sm"
+                placeholder="Paste the full Google Sheet URL or just the Sheet ID"
+              />
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setSheetSettingsOpen(false)}
+                className="px-4 py-2 rounded-xl font-medium bg-slate-100 hover:bg-slate-200 text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveSheetSettings}
+                disabled={!sheetIdInput.trim()}
+                className="px-5 py-2 rounded-xl font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
+              >
+                Save & Connect
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sync Results Modal */}
+      <Dialog open={syncModalOpen} onOpenChange={setSyncModalOpen}>
+        <DialogContent className="max-w-lg bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              Patients from Google Sheet
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-500 -mt-2">Click a patient to fill the registration form.</p>
+          <div className="max-h-96 overflow-y-auto space-y-2 mt-2 pr-1">
+            {syncResults.length === 0 ? (
+              <div className="text-center py-10 text-slate-400">
+                <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                <p>No patient rows found in the sheet.</p>
+              </div>
+            ) : (
+              syncResults.map((row, i) => (
+                <button
+                  key={i}
+                  onClick={() => fillFromRow(row)}
+                  className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50 transition-all group"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-slate-900 group-hover:text-emerald-800">{row.name || "—"}</p>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                        {row.mobile && <span className="text-xs text-slate-500">{row.mobile}</span>}
+                        {row.age && <span className="text-xs text-slate-500">Age: {row.age}{row.ageMonths ? ` yr ${row.ageMonths} mo` : " yr"}</span>}
+                        {row.weight && <span className="text-xs text-slate-500">Wt: {row.weight}</span>}
+                        {row.address && <span className="text-xs text-slate-500">{row.address}</span>}
+                      </div>
+                    </div>
+                    <span className="text-xs font-semibold text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                      Fill →
+                    </span>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Main Form */}
         <div className="lg:col-span-8 space-y-6">
           <div className="medical-card p-6 md:p-8">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                <User className="w-5 h-5" />
+            <div className="flex items-center justify-between gap-3 mb-8">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                  <User className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-display text-slate-900">Patient Registration</h2>
+                  <p className="text-slate-500 text-sm">Register a new visit and view medical history.</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-2xl font-display text-slate-900">Patient Registration</h2>
-                <p className="text-slate-500 text-sm">Register a new visit and view medical history.</p>
+
+              {/* Google Sheet Sync Controls */}
+              <div className="flex items-center gap-2 shrink-0">
+                {sheetId && (
+                  <button
+                    type="button"
+                    onClick={handleSync}
+                    disabled={syncing}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 shadow-sm transition-all text-sm"
+                    title="Load patients from Google Sheet"
+                  >
+                    {syncing
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <RefreshCcw className="w-4 h-4" />}
+                    <span className="hidden sm:inline">{syncing ? "Syncing…" : "Sync from Sheet"}</span>
+                  </button>
+                )}
+                {!sheetId && (
+                  <button
+                    type="button"
+                    onClick={openSheetSettings}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 shadow-sm transition-all text-sm"
+                    title="Connect Google Sheet"
+                  >
+                    <Sheet className="w-4 h-4" />
+                    <span className="hidden sm:inline">Connect Google Sheet</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={openSheetSettings}
+                  className="p-2.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                  title="Google Sheet settings"
+                >
+                  <Settings2 className="w-4 h-4" />
+                </button>
               </div>
             </div>
+
+            {/* Sheet Connected Banner */}
+            {sheetId && (
+              <div className="mb-6 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-sm">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-emerald-800 font-medium">Google Sheet connected.</span>
+                <span className="text-emerald-600">Press "Sync from Sheet" to load today's patients.</span>
+              </div>
+            )}
 
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               {/* Demographics */}
