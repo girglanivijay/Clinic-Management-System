@@ -2,6 +2,7 @@
 
 export interface Patient {
   id: number;
+  patientNo?: string;
   name: string;
   age: number;
   ageMonths?: number;
@@ -14,8 +15,8 @@ export interface Patient {
   advice?: string;
   reports?: string;
   fees: number;
-  paymentMode?: "cash" | "upi"; // kept for backward compat, no longer used in UI
-  attachments?: string[]; // base64 data URLs
+  paymentMode?: "cash" | "upi";
+  attachments?: string[];
   registerType?: "general" | "ayurvedic";
   visitDate: string;
   createdAt: string;
@@ -205,4 +206,39 @@ export function deleteComplaintCode(id: number): boolean {
 
 export function findComplaintCode(code: string): ComplaintCode | undefined {
   return getComplaintCodes().find((c) => c.code === code.toUpperCase());
+}
+
+// ─── Backup / Restore ───────────────────────────────────────────────────────
+
+export function exportAllData(): string {
+  return JSON.stringify({
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    patients: getPatients(),
+    complaintCodes: getComplaintCodes(),
+    idCounter: parseInt(localStorage.getItem(COUNTER_KEY) || "0"),
+  }, null, 2);
+}
+
+export interface ImportResult {
+  patients: number;
+  codes: number;
+}
+
+export function importAllData(json: string): ImportResult {
+  const data = JSON.parse(json);
+  if (!data.patients && !data.complaintCodes) throw new Error("Invalid backup file");
+  if (Array.isArray(data.patients)) {
+    localStorage.setItem(PATIENTS_KEY, JSON.stringify(data.patients));
+  }
+  if (Array.isArray(data.complaintCodes)) {
+    localStorage.setItem(CODES_KEY, JSON.stringify(data.complaintCodes));
+  }
+  if (typeof data.idCounter === "number") {
+    localStorage.setItem(COUNTER_KEY, String(data.idCounter));
+  }
+  return {
+    patients: (data.patients || []).length,
+    codes: (data.complaintCodes || []).length,
+  };
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import { Layout } from "@/components/Layout";
 import {
@@ -6,11 +6,17 @@ import {
   updatePatient,
   deletePatient,
   getAllDates,
+  addPatient,
+  exportAllData,
+  importAllData,
   type Patient,
   type DailyStats,
 } from "@/lib/store";
-import { Calendar, Download, Edit2, Trash2, Users, IndianRupee, FileText, ChevronDown, ChevronUp, Printer } from "lucide-react";
-import { exportToExcel } from "@/lib/export";
+import {
+  Calendar, Download, Edit2, Trash2, Users, IndianRupee, FileText,
+  ChevronDown, ChevronUp, Printer, Upload, HardDrive, RotateCcw,
+} from "lucide-react";
+import { exportToExcel, importFromExcel } from "@/lib/export";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -20,6 +26,7 @@ import { PrintPrescription, printPatientPrescription } from "@/components/PrintP
 import * as z from "zod";
 
 const editSchema = z.object({
+  patientNo: z.string().optional(),
   name: z.string().min(1),
   age: z.coerce.number().optional(),
   ageMonths: z.coerce.number().optional(),
@@ -41,7 +48,11 @@ export default function DailyRegister() {
   const [showSummary, setShowSummary] = useState(false);
   const [allDates, setAllDates] = useState<{ date: string; count: number; totalFees: number }[]>([]);
   const [printPatient, setPrintPatient] = useState<Patient | null>(null);
+  const [importing, setImporting] = useState(false);
   const { toast } = useToast();
+
+  const importExcelRef = useRef<HTMLInputElement>(null);
+  const importBackupRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(() => {
     setStats(getDailyStats(selectedDate));
@@ -52,6 +63,7 @@ export default function DailyRegister() {
 
   const editForm = useForm({ resolver: zodResolver(editSchema), values: editingPatient || {} });
 
+  // ── Export Excel ──────────────────────────────────────────────────────────
   const handleExport = () => {
     if (!stats?.patients || stats.patients.length === 0) {
       toast({ variant: "destructive", title: "No Data", description: "No patients to export for this date." });
@@ -59,6 +71,7 @@ export default function DailyRegister() {
     }
     const exportData = stats.patients.map((p, index) => ({
       "S.No": index + 1,
+      "Patient No": p.patientNo || "-",
       "Name": p.name,
       "Age": `${p.age || 0} yrs${p.ageMonths ? ` ${p.ageMonths} mo` : ""}`,
       "Weight": p.weight || "-",
@@ -75,6 +88,80 @@ export default function DailyRegister() {
     }));
     exportToExcel(exportData, `Manglam_Clinic_${selectedDate}`);
     toast({ title: "Export Successful", description: "Excel file downloaded." });
+  };
+
+  // ── Import Excel ──────────────────────────────────────────────────────────
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (importExcelRef.current) importExcelRef.current.value = "";
+    setImporting(true);
+    const { rows, error } = await importFromExcel(file);
+    if (error) {
+      toast({ variant: "destructive", title: "Import Failed", description: error });
+      setImporting(false);
+      return;
+    }
+    if (rows.length === 0) {
+      toast({ variant: "destructive", title: "No Data Found", description: "No valid patient rows found in the file." });
+      setImporting(false);
+      return;
+    }
+    rows.forEach((row) => {
+      addPatient({
+        patientNo: row.patientNo,
+        name: row.name,
+        mobile: row.mobile,
+        age: row.age,
+        ageMonths: row.ageMonths,
+        weight: row.weight,
+        address: row.address,
+        complaintCode: row.complaintCode,
+        complaint: row.complaint,
+        treatment: row.treatment,
+        advice: row.advice,
+        reports: row.reports,
+        fees: row.fees,
+        registerType: row.registerType,
+        visitDate: row.visitDate,
+      });
+    });
+    setImporting(false);
+    refresh();
+    toast({ title: "Import Successful", description: `${rows.length} patient records imported.` });
+  };
+
+  // ── Backup: export all data as JSON ──────────────────────────────────────
+  const handleBackupExport = () => {
+    const json = exportAllData();
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `manglam_backup_${format(new Date(), "yyyy-MM-dd")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Backup Saved", description: "All data exported as a backup file." });
+  };
+
+  // ── Restore: import all data from JSON ───────────────────────────────────
+  const handleBackupImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (importBackupRef.current) importBackupRef.current.value = "";
+    if (!confirm("This will REPLACE all existing data with the backup. Are you sure?")) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const json = ev.target?.result as string;
+        const result = importAllData(json);
+        refresh();
+        toast({ title: "Restore Successful", description: `${result.patients} patients and ${result.codes} complaint codes restored.` });
+      } catch {
+        toast({ variant: "destructive", title: "Restore Failed", description: "Invalid backup file." });
+      }
+    };
+    reader.readAsText(file);
   };
 
   const onEditSubmit = (data: any) => {
@@ -103,7 +190,7 @@ export default function DailyRegister() {
             <h2 className="text-2xl font-display text-slate-900">Daily Register</h2>
             <p className="text-slate-500 text-sm">All patients (General + Ayurvedic) for selected date</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <Calendar className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -113,13 +200,49 @@ export default function DailyRegister() {
                 className="pl-10 pr-4 py-2.5 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm text-slate-700 font-medium"
               />
             </div>
+
+            {/* Export Excel */}
             <button
               onClick={handleExport}
-              className="px-4 py-2.5 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2"
+              className="px-3 py-2.5 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2"
+              title="Export to Excel"
             >
               <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">Export Excel</span>
+              <span className="hidden sm:inline">Export</span>
             </button>
+
+            {/* Import Excel */}
+            <button
+              onClick={() => importExcelRef.current?.click()}
+              disabled={importing}
+              className="px-3 py-2.5 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2"
+              title="Import from Excel"
+            >
+              <Upload className="w-4 h-4" />
+              <span className="hidden sm:inline">{importing ? "Importing…" : "Import Excel"}</span>
+            </button>
+            <input ref={importExcelRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
+
+            {/* Backup */}
+            <button
+              onClick={handleBackupExport}
+              className="px-3 py-2.5 rounded-xl font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 shadow-sm transition-all flex items-center gap-2"
+              title="Backup all data"
+            >
+              <HardDrive className="w-4 h-4" />
+              <span className="hidden sm:inline">Backup</span>
+            </button>
+
+            {/* Restore */}
+            <button
+              onClick={() => importBackupRef.current?.click()}
+              className="px-3 py-2.5 rounded-xl font-semibold bg-orange-50 border border-orange-200 text-orange-700 hover:bg-orange-100 shadow-sm transition-all flex items-center gap-2"
+              title="Restore from backup"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="hidden sm:inline">Restore</span>
+            </button>
+            <input ref={importBackupRef} type="file" accept=".json" className="hidden" onChange={handleBackupImport} />
           </div>
         </div>
 
@@ -152,6 +275,7 @@ export default function DailyRegister() {
               <thead className="bg-slate-50 border-b border-slate-200/60">
                 <tr>
                   <th className="px-4 py-4 font-semibold text-slate-600">#</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600">Pt.No</th>
                   <th className="px-4 py-4 font-semibold text-slate-600">Patient</th>
                   <th className="px-4 py-4 font-semibold text-slate-600">Weight</th>
                   <th className="px-4 py-4 font-semibold text-slate-600">Complaint</th>
@@ -166,6 +290,13 @@ export default function DailyRegister() {
                   stats.patients.map((p, i) => (
                     <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-4 py-4 font-medium text-slate-400">{i + 1}</td>
+                      <td className="px-4 py-4">
+                        {p.patientNo ? (
+                          <span className="font-bold text-primary text-sm">#{p.patientNo}</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-4">
                         <p className="font-bold text-slate-900">{p.name}</p>
                         <p className="text-xs text-slate-500 mt-0.5">
@@ -206,7 +337,7 @@ export default function DailyRegister() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-6 py-16 text-center">
+                    <td colSpan={9} className="px-6 py-16 text-center">
                       <div className="flex flex-col items-center justify-center text-slate-400">
                         <FileText className="w-12 h-12 mb-3 text-slate-300" />
                         <p className="text-base font-medium">No patients found for this date</p>
@@ -275,15 +406,25 @@ export default function DailyRegister() {
           <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4 mt-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Patient No.</label>
+                <input {...editForm.register("patientNo")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" placeholder="e.g. 42" />
+              </div>
+              <div>
                 <label className="text-xs font-semibold text-slate-500 mb-1 block">Name</label>
                 <input {...editForm.register("name")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-500 mb-1 block">Age (yrs / mo)</label>
                 <div className="flex gap-1">
                   <input type="number" {...editForm.register("age")} className="w-full px-2 py-2 rounded-xl border focus:border-primary outline-none" placeholder="yrs" />
                   <input type="number" {...editForm.register("ageMonths")} className="w-16 px-2 py-2 rounded-xl border focus:border-primary outline-none" placeholder="mo" min={0} max={11} />
                 </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Mobile</label>
+                <input {...editForm.register("mobile")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -292,13 +433,9 @@ export default function DailyRegister() {
                 <input {...editForm.register("weight")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" placeholder="e.g. 65 kg" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block">Mobile</label>
-                <input {...editForm.register("mobile")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
+                <label className="text-xs font-semibold text-slate-500 mb-1 block">Address</label>
+                <input {...editForm.register("address")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
               </div>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Address</label>
-              <input {...editForm.register("address")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 mb-1 block">Complaint Code</label>

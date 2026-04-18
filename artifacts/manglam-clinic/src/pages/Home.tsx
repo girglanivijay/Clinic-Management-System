@@ -13,13 +13,14 @@ import {
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
 import {
   Loader2, User, Phone, MapPin, Activity, Save, RefreshCw,
-  FileText, Printer, Paperclip, X, Leaf, Weight,
+  FileText, Printer, Paperclip, X, Leaf, Weight, Calendar, Hash,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 
 const patientSchema = z.object({
+  patientNo: z.string().optional(),
   name: z.string().min(1, "Name is required"),
   mobile: z.string().min(5, "Valid mobile required"),
   age: z.coerce.number().min(0).optional(),
@@ -37,7 +38,7 @@ const patientSchema = z.object({
 type PatientFormValues = z.infer<typeof patientSchema>;
 
 const emptyDefaults: PatientFormValues = {
-  name: "", mobile: "", age: 0, ageMonths: 0, weight: "",
+  patientNo: "", name: "", mobile: "", age: 0, ageMonths: 0, weight: "",
   address: "", complaintCode: "", complaint: "", treatment: "",
   advice: "", reports: "", fees: 0,
 };
@@ -48,6 +49,7 @@ export default function Home() {
   const [patientHistory, setPatientHistory] = useState<Patient[]>([]);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [lastSaved, setLastSaved] = useState<Patient | null>(null);
+  const [visitDate, setVisitDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<PatientFormValues>({
@@ -121,6 +123,7 @@ export default function Home() {
 
   const savePatient = (data: PatientFormValues, registerType: "general" | "ayurvedic") => {
     const saved = addPatient({
+      patientNo: data.patientNo || "",
       name: data.name,
       mobile: data.mobile,
       age: data.age || 0,
@@ -135,14 +138,14 @@ export default function Home() {
       fees: Number(data.fees || 0),
       attachments,
       registerType,
-      visitDate: new Date().toISOString().split("T")[0],
+      visitDate,
     });
     setLastSaved(saved);
     toast({
       title: "Saved!",
       description: registerType === "ayurvedic"
-        ? "Patient saved to Ayurvedic Register (also visible in Daily Register)."
-        : "Patient saved to Daily Register.",
+        ? `Patient saved to Ayurvedic Register for ${format(new Date(visitDate), "dd MMM yyyy")}.`
+        : `Patient saved to Daily Register for ${format(new Date(visitDate), "dd MMM yyyy")}.`,
     });
     form.reset(emptyDefaults);
     setAttachments([]);
@@ -175,6 +178,32 @@ export default function Home() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               {/* Demographics */}
               <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 space-y-4">
+
+                {/* Visit Date + Patient No row */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-slate-400" /> Visit Date
+                    </label>
+                    <input
+                      type="date"
+                      value={visitDate}
+                      onChange={(e) => setVisitDate(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      <Hash className="w-4 h-4 text-slate-400" /> Patient No. <span className="text-slate-400 text-xs">(optional)</span>
+                    </label>
+                    <input
+                      {...form.register("patientNo")}
+                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
+                      placeholder="e.g. 42"
+                    />
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Mobile */}
                   <div className="space-y-2">
@@ -422,13 +451,13 @@ export default function Home() {
                     {patientHistory.map((visit, i) => (
                       <div key={i} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
                         <div className="flex justify-between items-start mb-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold px-2 py-1 bg-white rounded-md border border-slate-200 text-slate-600">
-                              {format(new Date(visit.visitDate), "dd MMM, yyyy")}
-                            </span>
-                            {visit.registerType === "ayurvedic" && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded">AYU</span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {visit.patientNo && (
+                              <span className="text-xs font-bold px-2 py-1 bg-primary/10 text-primary rounded-md border border-primary/20">
+                                #{visit.patientNo}
+                              </span>
                             )}
+                            <span className="text-sm font-bold text-slate-800">{visit.name}</span>
                           </div>
                           {visit.fees > 0 && (
                             <span className="text-xs font-bold text-primary bg-primary/5 px-2 py-1 rounded-md">
@@ -437,7 +466,16 @@ export default function Home() {
                           )}
                         </div>
 
-                        <div className="space-y-2 mt-3">
+                        <div className="flex items-center gap-1.5 mb-3">
+                          <span className="text-xs font-medium px-2 py-0.5 bg-white rounded border border-slate-200 text-slate-500">
+                            {format(new Date(visit.visitDate), "dd MMM, yyyy")}
+                          </span>
+                          {visit.registerType === "ayurvedic" && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded">AYU</span>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
                           {visit.weight && (
                             <div>
                               <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Weight</p>
