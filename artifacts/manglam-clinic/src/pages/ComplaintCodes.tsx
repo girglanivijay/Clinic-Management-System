@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import {
   getComplaintCodes,
@@ -7,12 +7,13 @@ import {
   deleteComplaintCode,
   type ComplaintCode,
 } from "@/lib/store";
-import { Plus, Edit2, Trash2, Search, Settings } from "lucide-react";
+import { Plus, Edit2, Trash2, Search, Settings, Download, Upload } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
 
 const codeSchema = z.object({
   code: z.string().min(1, "Required"),
@@ -26,10 +27,66 @@ export default function ComplaintCodes() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const { toast } = useToast();
+  const importRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(() => {
     setCodes(getComplaintCodes());
   }, []);
+
+  const handleExportCodes = () => {
+    const allCodes = getComplaintCodes();
+    if (allCodes.length === 0) {
+      toast({ variant: "destructive", title: "No Codes", description: "No complaint codes to export." });
+      return;
+    }
+    const exportData = allCodes.map(({ code, complaint, treatment }) => ({ code, complaint, treatment }));
+    const json = JSON.stringify({ complaintCodes: exportData }, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `complaint_codes_${format(new Date(), "yyyy-MM-dd")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Exported", description: `${allCodes.length} complaint codes saved to file.` });
+  };
+
+  const handleImportCodes = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (importRef.current) importRef.current.value = "";
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const json = JSON.parse(ev.target?.result as string);
+        const incoming: { code: string; complaint: string; treatment: string }[] =
+          json.complaintCodes || json;
+        if (!Array.isArray(incoming)) throw new Error("Invalid format");
+        const existing = getComplaintCodes();
+        const existingCodes = new Set(existing.map((c) => c.code.toUpperCase()));
+        let added = 0;
+        let skipped = 0;
+        incoming.forEach((item) => {
+          if (!item.code || !item.complaint) return;
+          if (existingCodes.has(item.code.toUpperCase())) {
+            skipped++;
+          } else {
+            addComplaintCode({ code: item.code, complaint: item.complaint, treatment: item.treatment || "" });
+            existingCodes.add(item.code.toUpperCase());
+            added++;
+          }
+        });
+        refresh();
+        toast({
+          title: "Import Complete",
+          description: `${added} codes added${skipped > 0 ? `, ${skipped} skipped (already exist)` : ""}.`,
+        });
+      } catch {
+        toast({ variant: "destructive", title: "Import Failed", description: "Invalid or unreadable file." });
+      }
+    };
+    reader.readAsText(file);
+  };
 
   useEffect(() => {
     refresh();
@@ -92,13 +149,32 @@ export default function ComplaintCodes() {
               <p className="text-slate-500 text-sm">Manage auto-fill templates for fast data entry.</p>
             </div>
           </div>
-          <button
-            onClick={handleOpenNew}
-            className="px-5 py-2.5 rounded-xl font-semibold bg-primary text-white shadow-lg shadow-primary/25 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Add New Code
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleExportCodes}
+              className="px-4 py-2.5 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2"
+              title="Export all codes to a file"
+            >
+              <Download className="w-4 h-4" />
+              Export Codes
+            </button>
+            <button
+              onClick={() => importRef.current?.click()}
+              className="px-4 py-2.5 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2"
+              title="Import codes from a file"
+            >
+              <Upload className="w-4 h-4" />
+              Import Codes
+            </button>
+            <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImportCodes} />
+            <button
+              onClick={handleOpenNew}
+              className="px-5 py-2.5 rounded-xl font-semibold bg-primary text-white shadow-lg shadow-primary/25 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Add New Code
+            </button>
+          </div>
         </div>
 
         {/* Search & List */}
