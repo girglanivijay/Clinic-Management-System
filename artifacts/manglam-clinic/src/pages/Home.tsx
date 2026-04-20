@@ -208,6 +208,49 @@ export default function Home() {
     if (id) toast({ title: "Sheet Connected", description: "You can now sync patients from Google Sheets." });
   };
 
+  // ── Paste CSV fallback ─────────────────────────────────────────────────────
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+
+  function parsePastedData(raw: string): SheetRow[] {
+    const lines = raw.trim().split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) return [];
+    // Detect separator: tab or comma
+    const sep = lines[0].includes("\t") ? "\t" : ",";
+    const headers = lines[0].split(sep).map((h) => h.trim().toLowerCase().replace(/[\s().#_-]/g, ""));
+    const get = (obj: Record<string, string>, ...keys: string[]) => {
+      for (const k of keys) if (obj[k] !== undefined) return obj[k];
+      return "";
+    };
+    return lines.slice(1)
+      .map((line) => {
+        const cols = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ""));
+        const obj: Record<string, string> = {};
+        headers.forEach((h, i) => { obj[h] = cols[i] ?? ""; });
+        return {
+          name:      get(obj, "name", "patientname", "nam"),
+          mobile:    get(obj, "mobile", "mobilenumber", "mobileno", "phone", "contact"),
+          age:       get(obj, "age", "ageyrs", "ageyears"),
+          ageMonths: get(obj, "agemo", "agemonths", "months"),
+          weight:    get(obj, "weight", "wt"),
+          address:   get(obj, "address", "city", "area"),
+        } as SheetRow;
+      })
+      .filter((r) => r.name || r.mobile);
+  }
+
+  const handlePasteSubmit = () => {
+    const rows = parsePastedData(pasteText);
+    if (rows.length === 0) {
+      toast({ variant: "destructive", title: "No data found", description: "Make sure your data has headers (Name, Mobile, Age, Weight, Address) in the first row." });
+      return;
+    }
+    setSyncResults(rows);
+    setPasteOpen(false);
+    setPasteText("");
+    setSyncModalOpen(true);
+  };
+
   // ── Sheet Sync ─────────────────────────────────────────────────────────────
   const handleSync = async () => {
     if (!sheetId) { openSheetSettings(); return; }
@@ -268,15 +311,20 @@ export default function Home() {
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-800 space-y-2">
-              <p className="font-bold">One-time setup:</p>
-              <ol className="list-decimal list-inside space-y-1 text-xs">
-                <li>Open your Google Sheet where staff enters patients</li>
-                <li>Click <strong>Share</strong> → set to <strong>"Anyone with the link can View"</strong></li>
-                <li>Copy the link or just the Sheet ID from the URL</li>
-                <li>Paste it below</li>
+              <p className="font-bold">One-time setup in Google Sheets:</p>
+              <ol className="list-decimal list-inside space-y-1.5 text-xs">
+                <li>Open your Google Sheet</li>
+                <li>Click <strong>File → Share → Publish to web</strong></li>
+                <li>Choose <strong>Sheet1</strong> and <strong>Comma-separated values (.csv)</strong></li>
+                <li>Click <strong>Publish</strong> → confirm with OK</li>
+                <li>Copy the URL shown, or just copy the Sheet ID from the browser address bar</li>
+                <li>Paste it below and click Save</li>
               </ol>
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1">
+                ⚠️ Use <strong>Publish to web</strong> (not the Share button) — this ensures the app can always read the data.
+              </p>
               <p className="text-xs text-emerald-700 mt-1">
-                Sheet columns your staff should fill: <strong>Name, Mobile, Age, Weight, Address</strong>
+                Sheet columns: <strong>Name | Mobile | Age | Weight | Address</strong>
               </p>
             </div>
             <div className="space-y-2">
@@ -302,6 +350,37 @@ export default function Home() {
               >
                 Save & Connect
               </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Paste CSV Modal */}
+      <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
+        <DialogContent className="max-w-lg bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl">Paste Patient Data</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 mt-1">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 space-y-1">
+              <p className="font-bold">How to paste from Google Sheets:</p>
+              <ol className="list-decimal list-inside space-y-0.5">
+                <li>Open your Google Sheet</li>
+                <li>Select all your data (including the header row)</li>
+                <li>Press <strong>Ctrl+C</strong> to copy</li>
+                <li>Click in the box below and press <strong>Ctrl+V</strong> to paste</li>
+              </ol>
+              <p className="mt-1">Header row must include: <strong>Name, Mobile, Age, Weight, Address</strong></p>
+            </div>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              className="w-full h-40 px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 outline-none text-sm font-mono resize-none"
+              placeholder={"Name\tMobile\tAge\tWeight\tAddress\nJayesh\t9876543210\t35\t70\tRajkot"}
+            />
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setPasteOpen(false); setPasteText(""); }} className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-sm">Cancel</button>
+              <button onClick={handlePasteSubmit} disabled={!pasteText.trim()} className="px-5 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-semibold text-sm disabled:opacity-40">Load Patients</button>
             </div>
           </div>
         </DialogContent>
@@ -393,6 +472,15 @@ export default function Home() {
                     <span className="hidden sm:inline">Connect Google Sheet</span>
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setPasteOpen(true)}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm transition-all text-sm"
+                  title="Paste patient data from clipboard"
+                >
+                  <Paperclip className="w-4 h-4" />
+                  <span className="hidden sm:inline">Paste</span>
+                </button>
                 <button
                   type="button"
                   onClick={openSheetSettings}
