@@ -47,7 +47,7 @@ const emptyDefaults: PatientFormValues = {
   advice: "", reports: "", fees: 0,
 };
 
-// ─── Google Sheet JSONP Fetch ─────────────────────────────────────────────────
+// ─── Google Sheet Fetch via Backend Proxy ────────────────────────────────────
 interface SheetRow {
   name: string;
   mobile: string;
@@ -57,75 +57,14 @@ interface SheetRow {
   address: string;
 }
 
-function normalizeHeader(h: string): string {
-  return h.toLowerCase().replace(/[\s().]/g, "");
-}
-
-function fetchSheetData(sheetId: string): Promise<SheetRow[]> {
-  return new Promise((resolve, reject) => {
-    const cbName = `_gviz_${Date.now()}`;
-    const script = document.createElement("script");
-
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error("Sync timed out. Make sure the Sheet ID is correct and the sheet is shared."));
-    }, 12000);
-
-    function cleanup() {
-      clearTimeout(timer);
-      delete (window as any)[cbName];
-      if (script.parentNode) script.remove();
-    }
-
-    (window as any)[cbName] = (response: any) => {
-      cleanup();
-      try {
-        const table = response?.table;
-        if (!table || !table.rows) { resolve([]); return; }
-
-        const cols: string[] = table.cols.map((c: any) =>
-          normalizeHeader(c.label || c.id || "")
-        );
-
-        const rows: SheetRow[] = table.rows
-          .map((row: any) => {
-            const obj: Record<string, string> = {};
-            (row.c || []).forEach((cell: any, i: number) => {
-              obj[cols[i]] = cell ? String(cell.v ?? "").trim() : "";
-            });
-            // Map known header variants → standard keys
-            const get = (...keys: string[]) => {
-              for (const k of keys) {
-                const normalized = normalizeHeader(k);
-                if (obj[normalized] !== undefined) return obj[normalized];
-              }
-              return "";
-            };
-            return {
-              name:      get("name", "patient name", "patientname"),
-              mobile:    get("mobile", "mobile number", "mobilenumber", "phone", "contact"),
-              age:       get("age", "ageyrs", "age(yrs)", "ageyears"),
-              ageMonths: get("agemo", "age(mo)", "agemonths", "months"),
-              weight:    get("weight"),
-              address:   get("address", "city", "area"),
-            } as SheetRow;
-          })
-          .filter((r: SheetRow) => r.name || r.mobile);
-
-        resolve(rows);
-      } catch (err) {
-        reject(new Error("Could not parse sheet data."));
-      }
-    };
-
-    script.onerror = () => {
-      cleanup();
-      reject(new Error("Failed to reach Google Sheets. Check your Sheet ID."));
-    };
-
-    script.src = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq?tqx=out:json&callback=${cbName}`;
-    document.body.appendChild(script);
-  });
+async function fetchSheetData(sheetId: string): Promise<SheetRow[]> {
+  const url = `/api/sheets?sheetId=${encodeURIComponent(sheetId)}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || `Server error ${res.status}`);
+  }
+  return Array.isArray(data.patients) ? data.patients : [];
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
