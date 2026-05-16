@@ -6,19 +6,19 @@
     <title>Manglam Clinic</title>
     <meta name="description" content="Clinic management software — Dr. Vijay Girglani" />
     <meta name="theme-color" content="#2563eb" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="root"></div>
-   <script type="module" src="./src/main.tsx"></script>
+    <script type="module" src="./src/main.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {});
+          navigator.serviceWorker.register('./sw.js').catch(() => {});
         });
       }
     </script>
