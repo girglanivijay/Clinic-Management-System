@@ -50,6 +50,7 @@ export default function Home() {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [lastSaved, setLastSaved] = useState<Patient | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [waLang, setWaLang] = useState<"en" | "hi" | "gu">("gu");
 
   const form = useForm<PatientFormValues>({
     resolver: zodResolver(patientSchema),
