@@ -150,7 +150,53 @@ export default function Home() {
     setAttachments([]);
     setPatientHistory([]);
   };
+const sendWhatsApp = (patient: Patient) => {
+  const name = patient.name;
+  const date = format(new Date(patient.visitDate), "dd MMM yyyy");
+  const fees = patient.fees > 0 ? `₹${patient.fees}` : "—";
+  const mobile = patient.mobile.replace(/\D/g, "");
 
+  const messages = {
+    en: `Namaskar ${name} 🙏
+
+Your visit at *Manglam Clinic* has been registered.
+
+📅 Date: ${date}
+💰 Fees: ${fees}
+${patient.complaint ? `🩺 Complaint: ${patient.complaint}\n` : ""}${patient.advice ? `💊 Advice: ${patient.advice}\n` : ""}
+Please follow the prescribed treatment. For any queries, feel free to contact us.
+
+— *Dr. Vijay Girglani*
+Manglam Clinic, Morbi`,
+
+    hi: `नमस्कार ${name} 🙏
+
+आपकी विज़िट *मंगलम क्लिनिक* में दर्ज हो गई है।
+
+📅 तारीख: ${date}
+💰 फीस: ${fees}
+${patient.complaint ? `🩺 शिकायत: ${patient.complaint}\n` : ""}${patient.advice ? `💊 सलाह: ${patient.advice}\n` : ""}
+कृपया दी गई दवाइयाँ समय पर लें। कोई भी परेशानी हो तो संपर्क करें।
+
+— *डॉ. विजय गिरगलानी*
+मंगलम क्लिनिक, मोरबी`,
+
+    gu: `નમસ્કાર ${name} 🙏
+
+આપની મુલાકાત *મંગલમ ક્લિનિક* માં નોંધાઈ ગઈ છે.
+
+📅 તારીખ: ${date}
+💰 ફી: ${fees}
+${patient.complaint ? `🩺 તકલીફ: ${patient.complaint}\n` : ""}${patient.advice ? `💊 સલાહ: ${patient.advice}\n` : ""}
+કૃપા કરીને સૂચવેલ દવાઓ સમયસર લો. કોઈ પણ સમસ્યા હોય તો સંપર્ક કરો.
+
+— *ડૉ. વિજય ગિરગ્લાણી*
+મંગલમ ક્લિનિક, મોરબી`,
+  };
+
+  const text = encodeURIComponent(messages[waLang]);
+  window.open(`https://wa.me/91${mobile}?text=${text}`, "_blank");
+};
   const onSubmit = (data: PatientFormValues) => savePatient(data, "general");
   const onSaveAyurvedic = () => {
     form.handleSubmit((data) => savePatient(data, "ayurvedic"))();
@@ -373,16 +419,47 @@ export default function Home() {
 
               {/* Action Buttons */}
               <div className="flex flex-wrap justify-end gap-3 pt-2">
-                {lastSaved && (
-                  <button
-                    type="button"
-                    onClick={() => printPatientPrescription(lastSaved)}
-                    className="px-5 py-3 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2"
-                  >
-                    <Printer className="w-5 h-5" />
-                    Print Last Prescription
-                  </button>
-                )}
+               {lastSaved && (
+  <>
+    {/* WhatsApp Language Selector + Button */}
+    <div className="flex items-center gap-2">
+      <div className="flex rounded-xl border border-slate-200 overflow-hidden text-xs font-bold">
+        {(["gu", "hi", "en"] as const).map((lang) => (
+          <button
+            key={lang}
+            type="button"
+            onClick={() => setWaLang(lang)}
+            className={`px-3 py-2 transition-all ${
+              waLang === lang
+                ? "bg-green-500 text-white"
+                : "bg-white text-slate-500 hover:bg-slate-50"
+            }`}
+          >
+            {lang === "gu" ? "ગુ" : lang === "hi" ? "हि" : "EN"}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => sendWhatsApp(lastSaved)}
+        className="px-5 py-3 rounded-xl font-semibold bg-green-500 text-white hover:bg-green-600 shadow-sm shadow-green-500/30 transition-all flex items-center gap-2"
+      >
+        <MessageCircle className="w-5 h-5" />
+        WhatsApp
+      </button>
+    </div>
+
+    {/* Print button — unchanged */}
+    <button
+      type="button"
+      onClick={() => printPatientPrescription(lastSaved)}
+      className="px-5 py-3 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2"
+    >
+      <Printer className="w-5 h-5" />
+      Print Last Prescription
+    </button>
+  </>
+)}
                 <button
                   type="button"
                   onClick={onSaveAyurvedic}
