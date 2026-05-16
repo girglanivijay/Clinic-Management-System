@@ -16,6 +16,7 @@ import {
   FileText, Printer, Paperclip, X, Leaf, Weight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { MessageCircle } from "lucide-react";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 
