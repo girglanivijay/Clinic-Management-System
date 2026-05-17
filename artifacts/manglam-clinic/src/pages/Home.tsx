@@ -16,7 +16,6 @@ import {
   FileText, Printer, Paperclip, X, Leaf, Weight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { MessageCircle } from "lucide-react";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -50,7 +49,6 @@ export default function Home() {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [lastSaved, setLastSaved] = useState<Patient | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [waLang, setWaLang] = useState<"en" | "hi" | "gu">("gu");
 
   const form = useForm<PatientFormValues>({
     resolver: zodResolver(patientSchema),
@@ -150,53 +148,7 @@ export default function Home() {
     setAttachments([]);
     setPatientHistory([]);
   };
-const sendWhatsApp = (patient: Patient) => {
-  const name = patient.name;
-  const date = format(new Date(patient.visitDate), "dd MMM yyyy");
-  const fees = patient.fees > 0 ? `₹${patient.fees}` : "—";
-  const mobile = patient.mobile.replace(/\D/g, "");
 
-  const messages = {
-    en: `Namaskar ${name} 🙏
-
-Your visit at *Manglam Clinic* has been registered.
-
-📅 Date: ${date}
-💰 Fees: ${fees}
-${patient.complaint ? `🩺 Complaint: ${patient.complaint}\n` : ""}${patient.advice ? `💊 Advice: ${patient.advice}\n` : ""}
-Please follow the prescribed treatment. For any queries, feel free to contact us.
-
-— *Dr. Vijay Girglani*
-Manglam Clinic, Morbi`,
-
-    hi: `नमस्कार ${name} 🙏
-
-आपकी विज़िट *मंगलम क्लिनिक* में दर्ज हो गई है।
-
-📅 तारीख: ${date}
-💰 फीस: ${fees}
-${patient.complaint ? `🩺 शिकायत: ${patient.complaint}\n` : ""}${patient.advice ? `💊 सलाह: ${patient.advice}\n` : ""}
-कृपया दी गई दवाइयाँ समय पर लें। कोई भी परेशानी हो तो संपर्क करें।
-
-— *डॉ. विजय गिरगलानी*
-मंगलम क्लिनिक, मोरबी`,
-
-    gu: `નમસ્કાર ${name} 🙏
-
-આપની મુલાકાત *મંગલમ ક્લિનિક* માં નોંધાઈ ગઈ છે.
-
-📅 તારીખ: ${date}
-💰 ફી: ${fees}
-${patient.complaint ? `🩺 તકલીફ: ${patient.complaint}\n` : ""}${patient.advice ? `💊 સલાહ: ${patient.advice}\n` : ""}
-કૃપા કરીને સૂચવેલ દવાઓ સમયસર લો. કોઈ પણ સમસ્યા હોય તો સંપર્ક કરો.
-
-— *ડૉ. વિજય ગિરગ્લાણી*
-મંગલમ ક્લિનિક, મોરબી`,
-  };
-
-  const text = encodeURIComponent(messages[waLang]);
-  window.open(`https://wa.me/91${mobile}?text=${text}`, "_blank");
-};
   const onSubmit = (data: PatientFormValues) => savePatient(data, "general");
   const onSaveAyurvedic = () => {
     form.handleSubmit((data) => savePatient(data, "ayurvedic"))();
@@ -224,7 +176,7 @@ ${patient.complaint ? `🩺 તકલીફ: ${patient.complaint}\n` : ""}${pati
               {/* Demographics */}
               <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Mobile — mandatory */}
+                  {/* Mobile */}
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                       <Phone className="w-4 h-4 text-slate-400" /> Mobile Number <span className="text-red-500">*</span>
@@ -241,7 +193,7 @@ ${patient.complaint ? `🩺 તકલીફ: ${patient.complaint}\n` : ""}${pati
                     {form.formState.errors.mobile && <p className="text-destructive text-xs">{form.formState.errors.mobile.message}</p>}
                   </div>
 
-                  {/* Name — mandatory */}
+                  {/* Name */}
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                       <User className="w-4 h-4 text-slate-400" /> Patient Name <span className="text-red-500">*</span>
@@ -419,47 +371,16 @@ ${patient.complaint ? `🩺 તકલીફ: ${patient.complaint}\n` : ""}${pati
 
               {/* Action Buttons */}
               <div className="flex flex-wrap justify-end gap-3 pt-2">
-               {lastSaved && (
-  <>
-    {/* WhatsApp Language Selector + Button */}
-    <div className="flex items-center gap-2">
-      <div className="flex rounded-xl border border-slate-200 overflow-hidden text-xs font-bold">
-        {(["gu", "hi", "en"] as const).map((lang) => (
-          <button
-            key={lang}
-            type="button"
-            onClick={() => setWaLang(lang)}
-            className={`px-3 py-2 transition-all ${
-              waLang === lang
-                ? "bg-green-500 text-white"
-                : "bg-white text-slate-500 hover:bg-slate-50"
-            }`}
-          >
-            {lang === "gu" ? "ગુ" : lang === "hi" ? "हि" : "EN"}
-          </button>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={() => sendWhatsApp(lastSaved)}
-        className="px-5 py-3 rounded-xl font-semibold bg-green-500 text-white hover:bg-green-600 shadow-sm shadow-green-500/30 transition-all flex items-center gap-2"
-      >
-        <MessageCircle className="w-5 h-5" />
-        WhatsApp
-      </button>
-    </div>
-
-    {/* Print button — unchanged */}
-    <button
-      type="button"
-      onClick={() => printPatientPrescription(lastSaved)}
-      className="px-5 py-3 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2"
-    >
-      <Printer className="w-5 h-5" />
-      Print Last Prescription
-    </button>
-  </>
-)}
+                {lastSaved && (
+                  <button
+                    type="button"
+                    onClick={() => printPatientPrescription(lastSaved)}
+                    className="px-5 py-3 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2"
+                  >
+                    <Printer className="w-5 h-5" />
+                    Print Last Prescription
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={onSaveAyurvedic}
@@ -592,3 +513,4 @@ ${patient.complaint ? `🩺 તકલીફ: ${patient.complaint}\n` : ""}${pati
     </Layout>
   );
 }
+
