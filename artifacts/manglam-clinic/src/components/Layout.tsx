@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Stethoscope, Users, FileText, Activity, Leaf } from "lucide-react";
+import { Stethoscope, Users, FileText, Activity, Leaf, Printer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
@@ -9,6 +9,7 @@ const navItems = [
   { href: "/daily-register", label: "Daily Register", icon: Activity },
   { href: "/ayurvedic-register", label: "Ayurvedic Register", icon: Leaf },
   { href: "/complaint-codes", label: "Complaint Codes", icon: FileText },
+  { href: "/pathya-apathya", label: "Pathya-Apathya", icon: Printer },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {

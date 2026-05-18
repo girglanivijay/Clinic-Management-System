@@ -1,4 +1,4 @@
-const CACHE_NAME = "manglam-clinic-v8";
+const CACHE_NAME = "manglam-clinic-v9";
 
 const STATIC_ASSETS = [
   "/",
